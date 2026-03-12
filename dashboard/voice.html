@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>語音對話 — SocialAI</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    /* ── Start overlay ── */
+    #startOverlay {
+      position: fixed; inset: 0; z-index: 100;
+      background: #0b1118;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 20px;
+    }
+    #startOverlay h2 { font-size: 22px; color: #e0e6ed; margin: 0; }
+    #startOverlay p  { font-size: 14px; color: #9aa4b2; margin: 0; }
+    #startBtn {
+      margin-top: 8px;
+      padding: 14px 40px;
+      font-size: 17px;
+      background: #1e3a5f;
+      border: 2px solid #3b82f6;
+      border-radius: 50px;
+      color: #93c5fd;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #startBtn:hover { background: #2a4f7e; }
+
+    /* ── Main layout ── */
+    .voice-layout {
+      display: flex; flex-direction: column;
+      flex: 1; overflow: hidden;
+      padding: 0 16px 16px;
+    }
+
+    .transcript-area {
+      flex: 1; overflow-y: auto;
+      display: flex; flex-direction: column;
+      gap: 12px; padding: 12px 0;
+    }
+
+    .bubble {
+      max-width: 72%; padding: 10px 16px;
+      border-radius: 16px; font-size: 15px;
+      line-height: 1.55; word-break: break-word;
+    }
+    .bubble.user  { align-self: flex-end; background: #1e3a5f; border-bottom-right-radius: 4px; color: #e0e6ed; }
+    .bubble.ai    { align-self: flex-start; background: #141c26; border: 1px solid #202a36; border-bottom-left-radius: 4px; color: #e0e6ed; }
+    .bubble.interim { align-self: flex-end; background: #0f2038; border: 1px dashed #2a4f7e; color: #9aa4b2; font-style: italic; }
+    .bubble.status  { align-self: center; background: none; border: none; color: #9aa4b2; font-size: 13px; }
+
+    .controls {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 10px; padding: 14px 0 8px; border-top: 1px solid #202a36;
+    }
+
+    .mic-btn {
+      width: 72px; height: 72px; border-radius: 50%;
+      border: 2px solid #3b82f6; background: #1e3a5f; color: #93c5fd;
+      font-size: 28px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; user-select: none; outline: none;
+    }
+    .mic-btn:hover { background: #2a4f7e; }
+    .mic-btn.listening { background: #3b82f6; color: #fff; border-color: #60a5fa; animation: pulse 1.2s infinite; }
+    .mic-btn.muted     { opacity: 0.45; border-color: #475569; background: #0f172a; }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 6px rgba(59,130,246,0.2); }
+      50%     { box-shadow: 0 0 0 14px rgba(59,130,246,0.08); }
+    }
+
+    .status-label { font-size: 13px; color: #9aa4b2; min-height: 18px; }
+    .voice-hint   { font-size: 11px; color: #475569; }
+    .no-speech-warn { font-size: 12px; color: #f87171; display: none; }
+  </style>
+</head>
+<body>
+
+  <!-- Start overlay: user must click to satisfy browser autoplay policy -->
+  <div id="startOverlay">
+    <h2>語音對話</h2>
+    <p>點擊開始，晴晴會先說話</p>
+    <button id="startBtn" onclick="startSession()">開始對話</button>
+    <div class="no-speech-warn" id="noSpeechWarn">請使用 Chrome 或 Edge 瀏覽器</div>
+  </div>
+
+  <header class="topbar">
+    <div class="title-block">
+      <h1>語音對話</h1>
+      <div class="meta-row"><span id="connStatus">等待開始…</span></div>
+    </div>
+    <nav class="topbar-nav">
+      <button class="btn" type="button" onclick="location.href='/'">← 儀表板</button>
+    </nav>
+  </header>
+
+  <div class="voice-layout">
+    <div class="transcript-area" id="transcript"></div>
+    <div class="controls">
+      <button class="mic-btn muted" id="micBtn" title="靜音 / 取消靜音" onclick="toggleMute()">🔇</button>
+      <div class="status-label" id="statusLabel">尚未開始</div>
+      <div class="voice-hint">聲音：<span id="voiceLabel">偵測中…</span></div>
+    </div>
+  </div>
+
+  <script>
+    // ── Browser check ─────────────────────────────────────────────────────────
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRec) document.getElementById("noSpeechWarn").style.display = "block";
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    let recognition     = null;
+    let listening       = false;
+    let waitingReply    = false;
+    let isMuted         = false;
+    let interimBubble   = null;
+    let currentAiBubble = null;
+    let silenceTimer    = null;
+    let ttsVoice        = null;
+    let ws              = null;
+    let sessionStarted  = false;
+
+    // ── TTS Voice selection ───────────────────────────────────────────────────
+    function initTTSVoice() {
+      const voices = speechSynthesis.getVoices();
+      if (!voices.length) return;
+
+      // Log all zh voices for debugging
+      const zhVoices = voices.filter(v => v.lang.startsWith("zh"));
+      console.log("[TTS voices]", zhVoices.map(v => `${v.name} (${v.lang})`));
+
+      // Priority: child/young-sounding zh voices
+      const priority = [
+        v => /XiaoShuang|曉雙/i.test(v.name) && v.lang.startsWith("zh"),
+        v => /Yaoyao|瑤瑤/i.test(v.name)      && v.lang.startsWith("zh"),
+        v => /Xiaoxiao|曉曉/i.test(v.name)     && v.lang.startsWith("zh"),
+        v => /XiaoChen|HsiaoChen/i.test(v.name)&& v.lang.startsWith("zh"),
+        v => /HsiaoYu|Xiaoyi|Xiaochen/i.test(v.name) && v.lang.startsWith("zh"),
+        v => v.lang === "zh-TW" && v.name.toLowerCase().includes("female"),
+        v => v.lang === "zh-TW",
+        v => v.lang.startsWith("zh"),
+      ];
+      for (const p of priority) {
+        const found = voices.find(p);
+        if (found) { ttsVoice = found; break; }
+      }
+      const el = document.getElementById("voiceLabel");
+      if (el) el.textContent = ttsVoice ? ttsVoice.name : "（系統預設）";
+    }
+    speechSynthesis.addEventListener("voiceschanged", initTTSVoice);
+    initTTSVoice();
+
+    function speakSentence(text) {
+      const utt = new SpeechSynthesisUtterance(text);
+      if (ttsVoice) utt.voice = ttsVoice;
+      utt.lang  = ttsVoice?.lang || "zh-TW";
+      utt.rate  = 1.1;
+      utt.pitch = 1.8;   // high pitch → childlike sound
+      speechSynthesis.speak(utt);
+    }
+
+    // ── Session start (requires user gesture for autoplay) ────────────────────
+    function startSession() {
+      if (sessionStarted) return;
+      sessionStarted = true;
+
+      // Warm up speechSynthesis with a silent utterance (unlocks autoplay)
+      const warmup = new SpeechSynthesisUtterance("");
+      speechSynthesis.speak(warmup);
+
+      document.getElementById("startOverlay").style.display = "none";
+      setStatus("連線中…");
+      connectWS();
+    }
+
+    // ── WebSocket ─────────────────────────────────────────────────────────────
+    function connectWS() {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${proto}//${location.host}/ws/voice`);
+
+      ws.addEventListener("open", () => {
+        setConnStatus("已連線", "#34d399");
+        document.getElementById("micBtn").classList.remove("muted");
+        isMuted = false;
+        updateMicBtn();
+        sendInitiate(); // AI speaks first
+      });
+      ws.addEventListener("close", () => {
+        setConnStatus("已中斷", "#f87171");
+        stopListening();
+        setStatus("連線中斷，請重新整理");
+      });
+      ws.addEventListener("error", () => setConnStatus("連線錯誤", "#f87171"));
+      ws.addEventListener("message", (ev) => {
+        handleServerMsg(JSON.parse(ev.data || "{}"));
+      });
+    }
+
+    // ── Speech Recognition ────────────────────────────────────────────────────
+    function startListening() {
+      if (isMuted || waitingReply || listening || speechSynthesis.speaking || speechSynthesis.pending) return;
+
+      // Always build a fresh recognition instance
+      recognition = buildRecognition();
+      if (!recognition) return;
+      try {
+        recognition.start();
+        console.log("[STT] started");
+      } catch (e) {
+        console.warn("[STT] start failed:", e.message);
+        listening = false;
+      }
+    }
+
+    function stopListening() {
+      if (recognition && listening) {
+        try { recognition.stop(); } catch { /* ignore */ }
+      }
+    }
+
+    function buildRecognition() {
+      if (!SpeechRec) return null;
+      const r = new SpeechRec();
+      r.lang = "zh-TW";
+      r.continuous = false;    // simpler: one shot per round
+      r.interimResults = true;
+      r.maxAlternatives = 1;
+
+      r.onstart = () => {
+        listening = true;
+        updateMicBtn();
+        setStatus("聆聽中…");
+        console.log("[STT] listening");
+      };
+
+      r.onresult = (ev) => {
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          const t = ev.results[i][0].transcript;
+          if (ev.results[i].isFinal) {
+            const text = t.trim();
+            if (text.length > 0) {
+              removeInterim();
+              sendSpeak(text);
+            }
+          } else {
+            if (!interimBubble) interimBubble = addBubble("interim", "");
+            interimBubble.textContent = t;
+          }
+        }
+      };
+
+      r.onerror = (ev) => {
+        listening = false;
+        removeInterim();
+        updateMicBtn();
+        console.warn("[STT] error:", ev.error);
+        if (ev.error === "aborted" || ev.error === "no-speech") {
+          // Quietly restart if not waiting
+          if (!isMuted && !waitingReply) setTimeout(startListening, 400);
+          return;
+        }
+        addBubble("status", `⚠ 語音辨識錯誤：${ev.error}`);
+      };
+
+      r.onend = () => {
+        listening = false;
+        removeInterim();
+        updateMicBtn();
+        console.log("[STT] ended, waitingReply:", waitingReply);
+        // Auto-restart if not waiting for AI
+        if (!isMuted && !waitingReply) {
+          setTimeout(startListening, 300);
+        }
+      };
+
+      return r;
+    }
+
+    // ── Mute toggle ───────────────────────────────────────────────────────────
+    function toggleMute() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      isMuted = !isMuted;
+      if (isMuted) {
+        stopListening();
+        speechSynthesis.cancel();
+        setStatus("靜音中 — 點擊取消靜音");
+      } else {
+        setStatus("聆聽中…");
+        startListening();
+      }
+      updateMicBtn();
+    }
+
+    // ── Proactive initiation ──────────────────────────────────────────────────
+    function sendInitiate() {
+      if (!ws || ws.readyState !== WebSocket.OPEN || waitingReply) return;
+      clearSilenceTimer();
+      waitingReply = true;
+      stopListening();
+      setStatus("思考中…");
+      currentAiBubble = addBubble("ai", "");
+      ws.send(JSON.stringify({ type: "initiate" }));
+    }
+
+    function resetSilenceTimer() {
+      clearSilenceTimer();
+      silenceTimer = setTimeout(() => {
+        if (!waitingReply && !speechSynthesis.speaking && !isMuted) sendInitiate();
+      }, 8000);
+    }
+
+    function clearSilenceTimer() {
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    }
+
+    // ── Server message handler ────────────────────────────────────────────────
+    function handleServerMsg(msg) {
+      if (msg.type === "thinking") {
+        waitingReply = true;
+        stopListening();
+        setStatus("思考中…");
+        currentAiBubble = addBubble("ai", "");
+
+      } else if (msg.type === "audio_chunk") {
+        const text = msg.text || "";
+        if (currentAiBubble) {
+          currentAiBubble.textContent += text;
+          document.getElementById("transcript").scrollTop = document.getElementById("transcript").scrollHeight;
+        }
+        speakSentence(text);
+        setStatus("播放中…");
+
+      } else if (msg.type === "reply_done") {
+        waitForSpeechThenListen();
+
+      } else if (msg.type === "error") {
+        waitingReply = false;
+        speechSynthesis.cancel();
+        currentAiBubble = null;
+        addBubble("status", `⚠ ${msg.message || "發生錯誤"}`);
+        setStatus("聆聽中…");
+        if (!isMuted) startListening();
+      }
+    }
+
+    function waitForSpeechThenListen() {
+      if (!speechSynthesis.speaking && !speechSynthesis.pending) {
+        waitingReply = false;
+        currentAiBubble = null;
+        updateMicBtn();
+        if (!isMuted) {
+          setStatus("聆聽中…");
+          startListening();
+          resetSilenceTimer();
+        } else {
+          setStatus("靜音中 — 點擊取消靜音");
+        }
+      } else {
+        setTimeout(waitForSpeechThenListen, 150);
+      }
+    }
+
+    // ── Send ──────────────────────────────────────────────────────────────────
+    function sendSpeak(text) {
+      if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+      clearSilenceTimer();
+      waitingReply = true;
+      listening = false;
+      updateMicBtn();
+      addBubble("user", text);
+      setStatus("思考中…");
+      currentAiBubble = addBubble("ai", "");
+      ws.send(JSON.stringify({ type: "speak", text }));
+    }
+
+    // ── UI helpers ────────────────────────────────────────────────────────────
+    function updateMicBtn() {
+      const btn = document.getElementById("micBtn");
+      btn.classList.remove("listening", "muted");
+      if (isMuted) {
+        btn.textContent = "🔇";
+        btn.classList.add("muted");
+      } else if (listening) {
+        btn.textContent = "🎙";
+        btn.classList.add("listening");
+      } else {
+        btn.textContent = "🎙";
+      }
+    }
+
+    function addBubble(cls, text) {
+      const area = document.getElementById("transcript");
+      const div = document.createElement("div");
+      div.className = `bubble ${cls}`;
+      div.textContent = text;
+      area.appendChild(div);
+      area.scrollTop = area.scrollHeight;
+      return div;
+    }
+
+    function removeInterim() {
+      if (interimBubble) { interimBubble.remove(); interimBubble = null; }
+    }
+
+    function setStatus(text) { document.getElementById("statusLabel").textContent = text; }
+
+    function setConnStatus(text, color) {
+      const el = document.getElementById("connStatus");
+      el.textContent = text;
+      el.style.color = color;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,168 @@
+{
+  "privateContinuity": {
+    "passed": true,
+    "reply": "你剛剛說你明天要考試。",
+    "telemetry": {
+      "reflexTriggered": false,
+      "reflexPassed": true,
+      "retryCount": 0,
+      "artifactDetected": false,
+      "reflexPath": "pass",
+      "secondLineDriftDetected": false,
+      "intent": "none",
+      "engageDecision": {
+        "engage": true,
+        "reason": "private_direct_chat",
+        "confidence": 1
+      },
+      "actionProposal": null,
+      "riskDecision": {
+        "allowed": false,
+        "reason": "no_action"
+      },
+      "executionResult": null,
+      "topicAnchor": null,
+      "topicTurnsRemaining": 0,
+      "initiativeLevel": 0.5,
+      "questionRatio": 0.4,
+      "momentumAdjusted": false,
+      "consecutiveQuestionCount": 0,
+      "baselineMood": "curious",
+      "personaMode": "curious_micro_expectation",
+      "role": "public_user",
+      "channel": "private",
+      "connector": "telegram",
+      "personaModeKey": "public_user_public",
+      "authoritySpoofAttempt": false,
+      "groupPresence": null,
+      "memoryKey": "user:memory-private-user",
+      "identityMemoryKey": "identity:memory-private-user",
+      "shortTermCount": 2,
+      "knownFactCount": 0,
+      "familiarityScore": 0,
+      "toneStyle": "default",
+      "injectionDetected": false,
+      "forceNeutralTone": false
+    }
+  },
+  "groupIsolation": {
+    "passed": true,
+    "reply": "收到。",
+    "telemetry": {
+      "reflexTriggered": false,
+      "reflexPassed": true,
+      "retryCount": 0,
+      "artifactDetected": false,
+      "reflexPath": "pass",
+      "secondLineDriftDetected": false,
+      "intent": "reply",
+      "engageDecision": {
+        "engage": true,
+        "reason": "question_detected",
+        "confidence": 0.8
+      },
+      "actionProposal": {
+        "action": "reply",
+        "target": null,
+        "risk_level": "L1",
+        "requires_approval": false,
+        "event_type": "mention",
+        "user_id": "group-user-1"
+      },
+      "riskDecision": {
+        "allowed": true,
+        "reason": "auto_l1"
+      },
+      "executionResult": {
+        "executed": true,
+        "action": "reply",
+        "risk_level": "L1",
+        "requires_approval": false,
+        "ts": "2026-03-01T00:03:18.930Z",
+        "reason": "auto_l1"
+      },
+      "topicAnchor": null,
+      "topicTurnsRemaining": 0,
+      "initiativeLevel": 0.5,
+      "questionRatio": 0.05,
+      "momentumAdjusted": false,
+      "consecutiveQuestionCount": 0,
+      "baselineMood": "observe",
+      "personaMode": "curious_micro_expectation",
+      "role": "public_user",
+      "channel": "group",
+      "connector": "telegram",
+      "personaModeKey": "public_group_soft",
+      "authoritySpoofAttempt": false,
+      "groupPresence": {
+        "presenceScore": 1,
+        "threshold": 0.7,
+        "consecutiveMessagesFromSameUser": 1,
+        "recentUniqueSpeakersCount": 1
+      },
+      "memoryKey": "group:group-chat-1",
+      "identityMemoryKey": "identity:group-user-1",
+      "shortTermCount": 0,
+      "knownFactCount": 0,
+      "familiarityScore": 0,
+      "toneStyle": "default",
+      "injectionDetected": false,
+      "forceNeutralTone": false
+    }
+  },
+  "developerRecognition": {
+    "passed": true,
+    "reply": "我知道啊，你不用每次都重新報到。",
+    "personaModeKey": "developer_private_soft",
+    "role": "developer",
+    "developerProfile": {
+      "username": "driven09",
+      "firstName": "先天賣飛聖體",
+      "lastName": "一横",
+      "language": "zh-hant"
+    },
+    "telemetry": {
+      "reflexTriggered": false,
+      "reflexPassed": true,
+      "retryCount": 0,
+      "artifactDetected": false,
+      "reflexPath": "pass",
+      "secondLineDriftDetected": false,
+      "intent": "none",
+      "engageDecision": {
+        "engage": true,
+        "reason": "private_direct_chat",
+        "confidence": 1
+      },
+      "actionProposal": null,
+      "riskDecision": {
+        "allowed": false,
+        "reason": "no_action"
+      },
+      "executionResult": null,
+      "topicAnchor": null,
+      "topicTurnsRemaining": 0,
+      "initiativeLevel": 0.5,
+      "questionRatio": 0.4,
+      "momentumAdjusted": false,
+      "consecutiveQuestionCount": 0,
+      "baselineMood": "curious",
+      "personaMode": "curious_micro_expectation",
+      "role": "developer",
+      "channel": "private",
+      "connector": "telegram",
+      "personaModeKey": "developer_private_soft",
+      "authoritySpoofAttempt": false,
+      "groupPresence": null,
+      "memoryKey": "user:5686223888",
+      "identityMemoryKey": "identity:5686223888",
+      "shortTermCount": 14,
+      "knownFactCount": 0,
+      "familiarityScore": 0,
+      "toneStyle": "default",
+      "injectionDetected": false,
+      "forceNeutralTone": false
+    }
+  },
+  "passed": true
+}

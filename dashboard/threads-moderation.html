@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threads 審核頁</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title-block">
+      <h1>Threads 審核頁</h1>
+      <div class="meta-row">
+        <span id="roleBadge">目前角色：-</span>
+        <span id="moderationSummary">待審核：--</span>
+        <span id="moderationUpdated">最後更新：--</span>
+        <span id="externalRateSummary">External Rate：本小時 -- / --｜今日 -- / --</span>
+        <span id="externalRateBadge" class="summary-chip subtle-chip">OK</span>
+      </div>
+    </div>
+    <nav class="topbar-nav">
+      <button class="btn" type="button" onclick="location.href='/'">總覽</button>
+      <button class="btn active" type="button">Threads 審核</button>
+      <button class="btn" type="button" onclick="location.href='/ai-cognition'">AI 認知</button>
+      <div class="nav-sep"></div>
+      <button class="btn" type="button" onclick="loadQueue()">刷新</button>
+      <select id="statusFilter" onchange="loadQueue()">
+        <option value="pending" selected>待審核</option>
+        <option value="approved">已核准</option>
+        <option value="rejected">已拒絕</option>
+        <option value="all">全部</option>
+      </select>
+      <select id="sortBy" onchange="loadQueue()">
+        <option value="createdAt" selected>依時間排序</option>
+        <option value="riskLevel">依風險排序</option>
+      </select>
+    </nav>
+  </header>
+
+  <main class="moderation-split-grid">
+    <section class="panel">
+      <div class="panel-title">回覆他人留言 <span id="selfReplyCount" class="count-badge"></span></div>
+      <div id="selfReplyList" class="moderation-list"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-title">回覆貼文 <span id="externalReplyCount" class="count-badge"></span></div>
+      <div id="externalReplyList" class="moderation-list"></div>
+    </section>
+  </main>
+
+  <script src="threads_moderation.js"></script>
+</body>
+</html>

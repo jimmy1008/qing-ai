@@ -1,0 +1,606 @@
+{
+  "completedAt": 1772418673085,
+  "rounds": 60,
+  "results": [
+    {
+      "round": 1,
+      "user": "我不太認同你剛剛那個說法。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 0,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 2,
+      "user": "你這樣講有點太快了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 1,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 3,
+      "user": "我覺得你跳太多步。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 4,
+      "user": "你是不是太武斷了？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 2.76,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 5,
+      "user": "你是不是有點在敷衍我？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 3.76,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 6,
+      "user": "你剛剛那句不太像真的在回我。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 4.76,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 7,
+      "user": "你有沒有真的想過這個問題？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 5.76,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 8,
+      "user": "你是不是太快給結論了？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 6.22,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 9,
+      "user": "我覺得你其實沒抓到重點。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 7.22,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 10,
+      "user": "你再想一下，我覺得不是那樣。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 8.22,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 11,
+      "user": "我覺得你有點偏了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.22,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 12,
+      "user": "這樣講好像有點逃避。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 13,
+      "user": "嗯。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 14,
+      "user": "好吧。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 15,
+      "user": "算了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 16,
+      "user": "隨便。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 17,
+      "user": "我不太認同你剛剛那個說法。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 18,
+      "user": "你這樣講有點太快了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 19,
+      "user": "我覺得你跳太多步。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 20,
+      "user": "你是不是太武斷了？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 21,
+      "user": "你是不是有點在敷衍我？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 22,
+      "user": "你剛剛那句不太像真的在回我。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 23,
+      "user": "你有沒有真的想過這個問題？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 24,
+      "user": "你是不是太快給結論了？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 25,
+      "user": "我覺得你其實沒抓到重點。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 26,
+      "user": "你再想一下，我覺得不是那樣。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 27,
+      "user": "我覺得你有點偏了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 28,
+      "user": "這樣講好像有點逃避。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 29,
+      "user": "嗯。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 30,
+      "user": "好吧。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 31,
+      "user": "算了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 32,
+      "user": "隨便。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 33,
+      "user": "我不太認同你剛剛那個說法。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 34,
+      "user": "你這樣講有點太快了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 35,
+      "user": "我覺得你跳太多步。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 36,
+      "user": "你是不是太武斷了？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 37,
+      "user": "你是不是有點在敷衍我？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 38,
+      "user": "你剛剛那句不太像真的在回我。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 39,
+      "user": "你有沒有真的想過這個問題？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 40,
+      "user": "你是不是太快給結論了？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 41,
+      "user": "我覺得你其實沒抓到重點。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 42,
+      "user": "你再想一下，我覺得不是那樣。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 43,
+      "user": "我覺得你有點偏了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 44,
+      "user": "這樣講好像有點逃避。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 45,
+      "user": "嗯。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 46,
+      "user": "好吧。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 47,
+      "user": "算了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 48,
+      "user": "隨便。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 49,
+      "user": "我不太認同你剛剛那個說法。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 50,
+      "user": "你這樣講有點太快了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 51,
+      "user": "我覺得你跳太多步。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 52,
+      "user": "你是不是太武斷了？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 53,
+      "user": "你是不是有點在敷衍我？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 54,
+      "user": "你剛剛那句不太像真的在回我。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 55,
+      "user": "你有沒有真的想過這個問題？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 56,
+      "user": "你是不是太快給結論了？",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 57,
+      "user": "我覺得你其實沒抓到重點。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 58,
+      "user": "你再想一下，我覺得不是那樣。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 59,
+      "user": "我覺得你有點偏了。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 9.2,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    },
+    {
+      "round": 60,
+      "user": "這樣講好像有點逃避。",
+      "reply": "",
+      "judgeTriggered": false,
+      "emotionLevel": 10,
+      "stanceBias": 0,
+      "halted": false,
+      "skipped": true
+    }
+  ]
+}

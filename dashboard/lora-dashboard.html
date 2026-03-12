@@ -1,0 +1,1228 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LoRA 訓練控制台</title>
+  <style>
+    :root {
+      --bg:      #090c16;
+      --surface: #0d1120;
+      --card:    #111826;
+      --border:  #1e2a40;
+      --text:    #eaf0ff;
+      --muted:   #7e94b8;
+      --green:   #22c55e;
+      --amber:   #f59e0b;
+      --red:     #ef4444;
+      --accent:  #6366f1;
+      --accent2: #a5b4fc;
+    }
+    *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+    html,body { height:100%; overflow:hidden; }
+    body { background:var(--bg); color:var(--text); font:15px/1.55 'PingFang TC','Noto Sans TC','Microsoft JhengHei',ui-sans-serif,system-ui,sans-serif; }
+
+    /* ── LAYOUT ── */
+    #shell { display:flex; flex-direction:column; height:100vh; }
+
+    .topbar {
+      flex-shrink:0; height:50px;
+      display:flex; align-items:center; gap:10px; padding:0 16px;
+      background:var(--surface); border-bottom:1px solid var(--border);
+    }
+    .brand { display:flex; align-items:center; gap:8px; font-weight:700; font-size:15px; margin-right:6px; }
+    .brand-icon { width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,#6366f1,#a5b4fc); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:#fff; flex-shrink:0; }
+    .vsep { width:1px; height:18px; background:var(--border); flex-shrink:0; }
+    .top-tabs { display:flex; gap:2px; }
+    .top-tab { padding:5px 15px; border-radius:6px; border:1px solid transparent; cursor:pointer; color:var(--muted); font-size:13px; background:none; transition:all .15s; }
+    .top-tab:hover { color:var(--text); background:var(--card); }
+    .top-tab.active { color:var(--accent2); background:rgba(99,102,241,.1); border-color:rgba(99,102,241,.28); }
+    .top-meta { display:flex; gap:14px; font-size:12px; color:var(--muted); }
+    .top-meta span { color:var(--text); font-weight:600; }
+    .top-right { margin-left:auto; display:flex; align-items:center; gap:7px; }
+
+    .body { display:grid; grid-template-columns:268px 1fr 288px; flex:1; min-height:0; overflow:hidden; }
+    .left-col { height:100%; overflow-y:auto; padding:16px 14px; display:flex; flex-direction:column; gap:13px; border-right:1px solid var(--border); }
+    .right-col { height:100%; overflow-y:auto; padding:16px 14px; display:flex; flex-direction:column; gap:13px; border-left:1px solid var(--border); }
+    .center-col { height:100%; overflow:hidden; display:flex; flex-direction:column; }
+    .tab-page { display:none; flex:1; min-height:0; padding:16px; overflow-y:auto; }
+    .tab-page.active { display:flex; flex-direction:column; gap:13px; }
+
+    /* ── CARDS ── */
+    .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+    .card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; gap:8px; }
+    .card-title { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+    .section-hd { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; }
+
+    /* ── BADGES ── */
+    .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap; }
+    .badge::before { content:''; display:block; width:5px; height:5px; border-radius:50%; flex-shrink:0; }
+    .badge.ready  { background:rgba(34,197,94,.1); color:var(--green); border:1px solid rgba(34,197,94,.22); }
+    .badge.ready::before  { background:var(--green); }
+    .badge.running { background:rgba(245,158,11,.1); color:var(--amber); border:1px solid rgba(245,158,11,.22); }
+    .badge.running::before { background:var(--amber); animation:blink 1.4s infinite; }
+    .badge.failed { background:rgba(239,68,68,.08); color:var(--red); border:1px solid rgba(239,68,68,.2); }
+    .badge.failed::before { background:var(--red); }
+    .badge.idle { background:rgba(92,106,130,.1); color:var(--muted); border:1px solid rgba(92,106,130,.2); }
+    .badge.idle::before { background:var(--muted); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    /* ── BUTTONS ── */
+    .btn { padding:6px 13px; border-radius:6px; border:1px solid var(--border); background:var(--card); color:var(--text); font-size:13px; cursor:pointer; transition:border-color .15s,background .15s; font-family:inherit; }
+    .btn:hover { border-color:#2a3a58; background:#182030; }
+    .btn.primary { background:rgba(99,102,241,.12); border-color:rgba(99,102,241,.35); color:var(--accent2); }
+    .btn.primary:hover { background:rgba(99,102,241,.2); }
+    .btn.danger { background:rgba(239,68,68,.08); border-color:rgba(239,68,68,.3); color:var(--red); }
+    .btn.sm { padding:4px 10px; font-size:12px; }
+
+    /* ── PIPELINE STEPS ── */
+    .pipe-steps { display:flex; flex-direction:column; }
+    .pipe-step { display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; transition:background .1s; }
+    .pipe-step:hover { background:rgba(255,255,255,.02); }
+    .pipe-dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex-shrink:0; transition:background .2s; }
+    .pipe-dot.green  { background:var(--green); box-shadow:0 0 6px rgba(34,197,94,.45); }
+    .pipe-dot.amber  { background:var(--amber); box-shadow:0 0 6px rgba(245,158,11,.45); animation:blink 1.4s infinite; }
+    .pipe-dot.red    { background:var(--red); }
+    .pipe-label { font-size:14px; flex:1; }
+    .pipe-sub { font-size:11px; color:var(--muted); }
+
+    /* ── STAT GRID ── */
+    .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+    .stat-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
+    .stat-grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; }
+    .stat-grid-5 { display:grid; grid-template-columns:repeat(5,1fr); gap:5px; }
+    .stat { background:rgba(255,255,255,.025); border:1px solid var(--border); border-radius:6px; padding:9px 11px; }
+    .stat-lbl { font-size:11px; color:var(--muted); margin-bottom:3px; }
+    .stat-val { font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .stat-val.sm { font-size:12px; }
+
+    /* ── PROGRESS ── */
+    .prog { margin-top:8px; }
+    .prog-row { display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-bottom:3px; }
+    .prog-track { height:3px; border-radius:2px; background:rgba(255,255,255,.06); overflow:hidden; }
+    .prog-fill { height:100%; border-radius:2px; background:linear-gradient(90deg,#4f52cc,var(--accent)); transition:width .4s; }
+    .prog-fill.g { background:linear-gradient(90deg,#16a34a,var(--green)); }
+
+    /* ── RESOURCE BARS ── */
+    .res-list { display:flex; flex-direction:column; gap:8px; }
+    .res-row { }
+    .res-hd { display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px; }
+    .res-name { color:var(--muted); }
+    .res-val { color:var(--text); font-weight:600; }
+    .res-track { height:3px; background:rgba(255,255,255,.06); border-radius:2px; overflow:hidden; }
+    .res-bar { height:100%; border-radius:2px; }
+    .res-bar.gpu  { background:var(--green); }
+    .res-bar.vram { background:var(--amber); }
+    .res-bar.cpu  { background:var(--accent); }
+
+    /* ── CHARTS ── */
+    .chart-stack { display:grid; grid-template-rows:1fr 1fr; gap:7px; height:160px; }
+    .chart-box { background:rgba(255,255,255,.018); border:1px solid var(--border); border-radius:7px; overflow:hidden; }
+    .chart-box svg { width:100%; height:100%; display:block; }
+    .mini-chart { height:60px; }
+
+    /* ── TABLE ── */
+    .tbl { width:100%; border-collapse:collapse; font-size:11px; }
+    .tbl th { padding:6px 8px; text-align:left; color:var(--muted); font-weight:500; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:.3px; }
+    .tbl td { padding:7px 8px; border-bottom:1px solid rgba(255,255,255,.04); font-size:13px; }
+    .tbl tbody tr:last-child td { border-bottom:none; }
+
+    /* ── TEXTAREA / MONO ── */
+    textarea { width:100%; background:rgba(255,255,255,.025); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:8px 10px; font-size:13px; resize:none; font-family:inherit; }
+    textarea:focus { outline:none; border-color:rgba(99,102,241,.45); }
+    .mono { background:rgba(0,0,0,.3); border:1px solid var(--border); border-radius:6px; padding:10px; font-family:'Cascadia Code','Fira Code',ui-monospace,Consolas,monospace; font-size:12px; line-height:1.7; white-space:pre-wrap; color:#a8b8d8; overflow-y:auto; }
+
+    /* ── CONV ── */
+    .conv-wrap { display:grid; grid-template-columns:110px 1fr; gap:12px; flex:1; min-height:0; }
+    .conv-filters { display:flex; flex-direction:column; gap:5px; }
+    .conv-scroll { overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
+    .conv-item { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:7px; }
+    .conv-box { background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:6px; padding:8px; font-size:12px; }
+    .conv-lbl { font-size:11px; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.3px; }
+    .conv-meta { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
+
+    /* ── EXP HISTORY ── */
+    .exp-list { display:flex; flex-direction:column; gap:5px; }
+    .exp-item { background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:6px; padding:8px 11px; font-size:12px; color:var(--muted); }
+
+    /* ── SYSTEM TAB AGENT CARDS ── */
+    .agent-card { background:rgba(255,255,255,.025); border:1px solid var(--border); border-radius:7px; padding:9px 12px; display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; font-size:13px; }
+
+    /* ── DRAWER ── */
+    .drawer { position:fixed; right:0; top:0; height:100%; width:288px; background:var(--surface); border-left:1px solid var(--border); padding:16px; transform:translateX(100%); transition:transform .2s ease; z-index:999; overflow-y:auto; }
+    .drawer.open { transform:translateX(0); }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width:4px; height:4px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+    /* ── TRAIN CONTROLS ── */
+    .train-ctrl { display:flex; gap:5px; flex-wrap:wrap; align-items:center; }
+
+    /* ── PARAMS GRID ── */
+    .params-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
+    @media (min-width:1440px) { .params-grid { grid-template-columns:repeat(4,1fr); } }
+
+    /* ── EMPTY STATE ── */
+    .empty { color:var(--muted); font-size:13px; padding:16px; text-align:center; }
+
+    /* ── LIVE TRAIN PROGRESS ── */
+    .live-prog-wrap { margin-top:10px; }
+    .live-prog-row { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:4px; }
+    .live-prog-track { height:6px; border-radius:3px; background:rgba(255,255,255,.06); overflow:hidden; }
+    .live-prog-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#4f52cc,var(--accent)); transition:width .5s; }
+
+    /* ── REVIEW MODAL ── */
+    .review-overlay { position:fixed; inset:0; background:rgba(5,7,18,.9); z-index:1000; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(6px); }
+    .review-overlay.hidden { display:none; }
+    .review-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; width:min(740px,96vw); max-height:92vh; overflow-y:auto; padding:28px 30px; display:flex; flex-direction:column; gap:16px; }
+    .review-hd { display:flex; align-items:center; justify-content:space-between; }
+    .review-title { font-size:16px; font-weight:700; }
+    .review-prog-bar { height:5px; border-radius:3px; background:rgba(255,255,255,.06); overflow:hidden; margin-bottom:5px; }
+    .review-prog-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#4f52cc,var(--accent)); transition:width .4s; }
+    .review-counter-row { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--muted); }
+    .review-stat-chips { display:flex; gap:6px; }
+    .review-bubble { border-radius:10px; padding:14px 16px; font-size:14px; line-height:1.75; }
+    .review-bubble.user { background:rgba(99,102,241,.07); border:1px solid rgba(99,102,241,.18); }
+    .review-bubble.ai   { background:rgba(255,255,255,.035); border:1px solid var(--border); }
+    .review-bubble-lbl  { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:7px; font-weight:700; }
+    .review-meta { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+    .review-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn.approve { background:rgba(34,197,94,.09); border-color:rgba(34,197,94,.3); color:var(--green); font-weight:600; }
+    .btn.approve:hover { background:rgba(34,197,94,.18); }
+    .btn.reject  { background:rgba(239,68,68,.08); border-color:rgba(239,68,68,.28); color:var(--red); font-weight:600; }
+    .btn.reject:hover  { background:rgba(239,68,68,.16); }
+    .btn.flag    { background:rgba(245,158,11,.08); border-color:rgba(245,158,11,.28); color:var(--amber); font-weight:600; }
+    .btn.flag:hover    { background:rgba(245,158,11,.16); }
+    .score-btn { transition:opacity .1s,transform .1s,background .15s; }
+    .score-btn:hover { transform:translateY(-2px); background:rgba(255,255,255,.05); }
+    .score-btn:active { transform:translateY(0); }
+
+    /* ── PREFERENCE COLS ── */
+    .pref-cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .pref-col { border-radius:10px; padding:14px 16px; border:2px solid var(--border); cursor:pointer; transition:border-color .15s,background .15s; }
+    .pref-col:hover { border-color:#2a3a58; background:rgba(255,255,255,.02); }
+    .pref-col.selected { border-color:var(--accent); background:rgba(99,102,241,.07); }
+    .pref-col-lbl  { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:7px; font-weight:700; }
+    .pref-col-text { font-size:14px; line-height:1.75; }
+  </style>
+</head>
+<body>
+<div id="shell">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">L</div>
+      LoRA 訓練控制台
+    </div>
+    <div class="vsep"></div>
+    <div class="top-tabs">
+      <button class="top-tab active" data-tab="training">訓練</button>
+      <button class="top-tab" data-tab="conversation">對話</button>
+      <button class="top-tab" data-tab="system">系統</button>
+    </div>
+    <div class="vsep"></div>
+    <div class="top-meta">
+      <div>執行: <span id="runId">—</span></div>
+      <div>資料集: <span id="runDataset">—</span></div>
+      <div>模型: <span id="runModel">—</span></div>
+    </div>
+    <div class="top-right">
+      <span id="globalBadge" class="badge running">進行中</span>
+      <button class="btn sm" id="openDrawer">工具抽屜</button>
+      <button class="btn sm primary" id="retryAll">全部刷新</button>
+      <button class="btn sm" onclick="location.href='/'">← 返回</button>
+    </div>
+  </header>
+
+  <div class="body">
+
+    <!-- LEFT PANEL -->
+    <div class="left-col">
+
+      <!-- Pipeline steps -->
+      <div>
+        <div class="section-hd">流程進度</div>
+        <div class="pipe-steps">
+          <div class="pipe-step"><span class="pipe-dot" id="st-dataset"></span><span class="pipe-label">資料集</span></div>
+          <div class="pipe-step"><span class="pipe-dot" id="st-ascore"></span><span class="pipe-label">A 評分</span></div>
+          <div class="pipe-step"><span class="pipe-dot" id="st-pref"></span><span class="pipe-label">偏好學習</span></div>
+          <div class="pipe-step"><span class="pipe-dot" id="st-train"></span><span class="pipe-label">訓練</span></div>
+          <div class="pipe-step"><span class="pipe-dot" id="st-adapter"></span><span class="pipe-label">模型適配器</span></div>
+        </div>
+      </div>
+
+      <!-- Inference Generation -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">推論生成</div>
+          <span id="genBadge" class="badge idle">閒置</span>
+        </div>
+        <div class="prog" style="margin-top:0;margin-bottom:6px">
+          <div class="prog-row">
+            <span>已生成: <b id="genDone">0</b> / <b id="genTotal">5000</b></span>
+            <span><b id="genPct">0</b>%</span>
+          </div>
+          <div class="prog-track"><div id="genProgFill" class="prog-fill g" style="width:0%"></div></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px" id="genStatus">尚未開始</div>
+        <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+          <button class="btn sm primary" onclick="startGeneration()">開始生成</button>
+          <button class="btn sm danger" onclick="stopGeneration()">停止</button>
+          <span style="font-size:11px;color:var(--muted)">並行:</span>
+          <select id="genConcurrency" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 7px;font-size:11px;font-family:inherit">
+            <option value="1">1</option>
+            <option value="3" selected>3</option>
+            <option value="5">5</option>
+            <option value="8">8</option>
+          </select>
+          <button class="btn sm" onclick="buildQueueFromInference()" id="buildQueueBtn" style="margin-left:auto">→ 建立評分佇列</button>
+        </div>
+      </div>
+
+      <!-- A Scoring -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">A 評分</div>
+          <span id="aBadge" class="badge idle">閒置</span>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><div class="stat-lbl">模型通過率</div><div class="stat-val" id="aCoverage">—</div></div>
+          <div class="stat"><div class="stat-lbl">人格一致</div><div class="stat-val" id="aPersona">—</div></div>
+        </div>
+        <div id="aHumanStats" style="display:none;margin-top:6px">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:3px">
+            <div class="stat"><div class="stat-lbl" style="font-size:10px">1分</div><div class="stat-val" id="aScore1" style="color:var(--red)">0</div></div>
+            <div class="stat"><div class="stat-lbl" style="font-size:10px">2分</div><div class="stat-val" id="aScore2" style="color:#f97316">0</div></div>
+            <div class="stat"><div class="stat-lbl" style="font-size:10px">3分</div><div class="stat-val" id="aScore3" style="color:var(--amber)">0</div></div>
+            <div class="stat"><div class="stat-lbl" style="font-size:10px">4分</div><div class="stat-val" id="aScore4" style="color:#86efac">0</div></div>
+            <div class="stat"><div class="stat-lbl" style="font-size:10px">5分</div><div class="stat-val" id="aScore5" style="color:var(--green)">0</div></div>
+          </div>
+        </div>
+        <div class="prog" style="margin-top:8px">
+          <div class="prog-row"><span>已審: <b id="aProcessed">—</b></span><span>剩餘: <b id="aRemaining">—</b></span></div>
+          <div class="prog-track"><div id="aProgress" class="prog-fill" style="width:0%"></div></div>
+        </div>
+        <div style="margin-top:9px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+          <button id="startA" class="btn sm primary" onclick="openReviewA()">開始評分</button>
+          <select id="reviewASource" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 7px;font-size:11px;font-family:inherit">
+            <option value="inference">推論結果 (5000)</option>
+            <option value="training">訓練資料</option>
+            <option value="eval">Eval 測試集</option>
+          </select>
+          <button class="btn sm" onclick="resetReviewA()" style="color:var(--muted)">重建佇列</button>
+        </div>
+      </div>
+
+      <!-- B Preference -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">B 偏好學習</div>
+          <span id="bBadge" class="badge idle">閒置</span>
+        </div>
+        <div id="bHumanStats" style="display:none">
+          <div class="stat-grid-3" style="gap:4px;margin-bottom:6px">
+            <div class="stat"><div class="stat-lbl">A 更好</div><div class="stat-val" id="bAbetter">0</div></div>
+            <div class="stat"><div class="stat-lbl">B 更好</div><div class="stat-val" id="bBbetter" style="color:var(--green)">0</div></div>
+            <div class="stat"><div class="stat-lbl">差不多</div><div class="stat-val" id="bTie" style="color:var(--muted)">0</div></div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px" id="bPairLabel">—</div>
+        <div class="prog">
+          <div class="prog-row"><span>已審: <b id="bProcessed">—</b></span><span>剩餘: <b id="bRemaining">—</b></span></div>
+          <div class="prog-track"><div id="bProgress" class="prog-fill g" style="width:0%"></div></div>
+        </div>
+        <div style="margin-top:9px;display:flex;justify-content:space-between;align-items:center">
+          <span id="bMsg" style="font-size:10px;color:var(--muted)">等待 A 評分完成</span>
+          <button id="startB" class="btn sm primary" disabled onclick="openReviewB()">開始偏好評分</button>
+        </div>
+      </div>
+
+      <!-- Server resources -->
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column">
+        <div class="section-hd">
+          伺服器資源
+          <span id="sysBadge" class="badge idle">—</span>
+        </div>
+        <div class="card" style="flex:1;min-height:0;display:flex;flex-direction:column">
+          <div class="res-list">
+            <div class="res-row">
+              <div class="res-hd"><span class="res-name">GPU</span><span class="res-val" id="sysGpu">—</span></div>
+              <div class="res-track"><div class="res-bar gpu" id="sysGpuBar" style="width:0%"></div></div>
+            </div>
+            <div class="res-row">
+              <div class="res-hd"><span class="res-name">VRAM</span><span class="res-val" id="sysVram">—</span></div>
+              <div class="res-track"><div class="res-bar vram" id="sysVramBar" style="width:0%"></div></div>
+            </div>
+            <div class="res-row">
+              <div class="res-hd"><span class="res-name">CPU / RAM</span><span class="res-val" id="sysCpuRam">—</span></div>
+              <div class="res-track"><div class="res-bar cpu" id="sysCpuBar" style="width:0%"></div></div>
+            </div>
+          </div>
+          <div class="chart-box" style="margin-top:12px;flex:1;min-height:60px">
+            <svg id="sysSvg" viewBox="0 0 100 30" preserveAspectRatio="none" style="width:100%;height:100%"></svg>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /left-col -->
+
+    <!-- CENTER -->
+    <div class="center-col">
+
+      <!-- 訓練 tab -->
+      <div id="view-training" class="tab-page active">
+
+        <!-- Params + controls -->
+        <div class="card">
+          <div class="card-head">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="card-title">LoRA 訓練</div>
+              <span id="trainBadge" class="badge failed">失敗</span>
+              <span id="trainState" class="badge idle">Idle</span>
+            </div>
+            <div class="train-ctrl">
+              <button id="trainStart" class="btn sm">開始</button>
+              <button id="trainPause" class="btn sm">暫停</button>
+              <button id="trainResume" class="btn sm">繼續</button>
+              <button id="trainStop" class="btn sm danger">停止</button>
+              <button id="trainSaveCkpt" class="btn sm">存檔點</button>
+              <button id="trainLoadCkpt" class="btn sm">載入檔點</button>
+            </div>
+          </div>
+          <div class="params-grid">
+            <div class="stat"><div class="stat-lbl">基礎模型</div><div class="stat-val sm" id="trBase">—</div></div>
+            <div class="stat"><div class="stat-lbl">輸出 Adapter</div><div class="stat-val sm" id="trAdapter">—</div></div>
+            <div class="stat"><div class="stat-lbl">Rank</div><div class="stat-val" id="trRank">—</div></div>
+            <div class="stat"><div class="stat-lbl">Alpha</div><div class="stat-val" id="trAlpha">—</div></div>
+            <div class="stat"><div class="stat-lbl">Dropout</div><div class="stat-val" id="trDrop">—</div></div>
+            <div class="stat"><div class="stat-lbl">Batch / Grad</div><div class="stat-val" id="trBatchGrad">—</div></div>
+          </div>
+          <div class="live-prog-wrap">
+            <div class="live-prog-row">
+              <span>訓練進度</span>
+              <span><b id="liveStep">—</b> / <b id="liveTotalStep">—</b> 步 &nbsp;<b id="livePct">—</b>%</span>
+            </div>
+            <div class="live-prog-track"><div id="liveProgFill" class="live-prog-fill" style="width:0%"></div></div>
+          </div>
+        </div>
+
+        <!-- Charts + metrics -->
+        <div class="card">
+          <div class="stat-grid-4" style="margin-bottom:10px">
+            <div class="stat"><div class="stat-lbl">步驟</div><div class="stat-val" id="trStep">—</div></div>
+            <div class="stat"><div class="stat-lbl">輪次</div><div class="stat-val" id="trEpoch">—</div></div>
+            <div class="stat"><div class="stat-lbl">損失</div><div class="stat-val" id="trLoss">—</div></div>
+            <div class="stat"><div class="stat-lbl">學習率</div><div class="stat-val" id="trLr">—</div></div>
+          </div>
+          <div class="chart-stack">
+            <div class="chart-box"><svg id="lossSvg" viewBox="0 0 100 40" preserveAspectRatio="none"></svg></div>
+            <div class="chart-box"><svg id="lrSvg" viewBox="0 0 100 40" preserveAspectRatio="none"></svg></div>
+          </div>
+          <div class="stat-grid-5" style="margin-top:8px">
+            <div class="stat"><div class="stat-lbl">GPU 使用率</div><div class="stat-val" id="trGpu">—</div></div>
+            <div class="stat"><div class="stat-lbl">顯存</div><div class="stat-val" id="trVram">—</div></div>
+            <div class="stat"><div class="stat-lbl">tokens/秒</div><div class="stat-val" id="trTps">—</div></div>
+            <div class="stat"><div class="stat-lbl">樣本/秒</div><div class="stat-val" id="trSps">—</div></div>
+            <div class="stat"><div class="stat-lbl">梯度範數</div><div class="stat-val" id="trGradNorm">—</div></div>
+          </div>
+        </div>
+
+        <!-- Training log -->
+        <div class="card" style="flex:1;min-height:0;display:flex;flex-direction:column">
+          <div class="card-head"><div class="card-title">訓練日誌</div></div>
+          <div id="trainingLog" class="mono" style="flex:1;min-height:80px">—</div>
+        </div>
+
+        <!-- Experiment history -->
+        <div class="card">
+          <div class="card-head"><div class="card-title">實驗歷史</div></div>
+          <div id="expHistory" class="exp-list"><div class="exp-item">暫無歷史</div></div>
+        </div>
+
+      </div><!-- /view-training -->
+
+      <!-- 對話 tab -->
+      <div id="view-conversation" class="tab-page" style="flex:1;min-height:0">
+        <div class="conv-wrap" style="flex:1;min-height:0">
+          <div class="conv-filters" id="convFilters">
+            <div class="section-hd" style="margin-bottom:4px">篩選</div>
+            <button class="btn sm primary" data-filter="all">全部</button>
+            <button class="btn sm" data-filter="unscored">未評分</button>
+            <button class="btn sm" data-filter="low">低分</button>
+            <button class="btn sm" data-filter="rejected">已拒絕</button>
+            <button class="btn sm" data-filter="chosen">已選取</button>
+            <span id="convBadge" class="badge failed" style="margin-top:4px">失敗</span>
+          </div>
+          <div id="convList" class="conv-scroll"></div>
+        </div>
+      </div>
+
+      <!-- 系統 tab -->
+      <div id="view-system" class="tab-page">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">審計紀錄</div>
+            <span id="logBadge" class="badge failed">失敗</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="tbl">
+              <thead><tr><th>時間</th><th>操作者</th><th>操作</th><th>詳細</th></tr></thead>
+              <tbody id="logTable"></tbody>
+            </table>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+          <div class="card">
+            <div class="card-head"><div class="card-title">代理程式</div></div>
+            <div id="agentList"><div class="empty">暫無資料</div></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">任務</div></div>
+            <div id="taskList"><div class="empty">暫無資料</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">服務</div></div>
+          <div id="svcList"><div class="empty">暫無資料</div></div>
+        </div>
+      </div>
+
+    </div><!-- /center-col -->
+
+    <!-- RIGHT PANEL -->
+    <div class="right-col">
+
+      <!-- Dataset -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">資料集</div>
+          <span id="fileBadge" class="badge failed">失敗</span>
+        </div>
+        <div style="overflow-x:auto;margin-bottom:8px">
+          <table class="tbl">
+            <thead><tr><th>檔案</th><th>樣本</th><th>格式</th></tr></thead>
+            <tbody id="fileTable"></tbody>
+          </table>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><div class="stat-lbl">樣本數</div><div class="stat-val" id="dsSamples">—</div></div>
+          <div class="stat"><div class="stat-lbl">平均 tokens</div><div class="stat-val" id="dsAvgTokens">—</div></div>
+          <div class="stat"><div class="stat-lbl">最大 tokens</div><div class="stat-val" id="dsMaxTokens">—</div></div>
+          <div class="stat"><div class="stat-lbl">重複數</div><div class="stat-val" id="dsDupes">—</div></div>
+        </div>
+      </div>
+
+      <!-- Validation -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">資料驗證</div>
+          <span id="valBadge" class="badge failed">失敗</span>
+        </div>
+        <div class="stat-grid">
+          <div class="stat"><div class="stat-lbl">缺失欄位</div><div class="stat-val" id="valMissing">—</div></div>
+          <div class="stat"><div class="stat-lbl">非法字元</div><div class="stat-val" id="valIllegal">—</div></div>
+          <div class="stat"><div class="stat-lbl">空白樣本</div><div class="stat-val" id="valEmpty">—</div></div>
+          <div class="stat"><div class="stat-lbl">重複率</div><div class="stat-val" id="valDup">—</div></div>
+        </div>
+      </div>
+
+      <!-- Inference Sandbox -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">推論測試台</div>
+          <span id="inferBadge" class="badge idle">就緒</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div>
+            <div class="stat-lbl" style="margin-bottom:4px">提示詞</div>
+            <textarea id="inferInput" rows="3" placeholder="輸入測試提示詞…"></textarea>
+          </div>
+          <div>
+            <div class="stat-lbl" style="margin-bottom:4px">系統人格</div>
+            <textarea id="inferPersona" rows="2" placeholder="覆寫人格設定（可選）…"></textarea>
+          </div>
+          <div>
+            <div class="stat-lbl" style="margin-bottom:4px">輸出</div>
+            <div id="inferOut" class="mono" style="min-height:72px;max-height:160px;overflow-y:auto">—</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button id="runInfer" class="btn sm primary">執行</button>
+            <button id="saveInfer" class="btn sm">儲存</button>
+            <button id="scoreInfer" class="btn sm">評分</button>
+            <span style="margin-left:auto;font-size:10px;color:var(--muted)">拖曳 .json/.jsonl 至此</span>
+          </div>
+        </div>
+      </div>
+
+
+    </div><!-- /right-col -->
+
+  </div><!-- /body -->
+</div><!-- /shell -->
+
+<!-- DRAWER -->
+<aside id="drawer" class="drawer">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div style="font-weight:700;font-size:14px">工具抽屜</div>
+    <button id="closeDrawer" class="btn sm">關閉</button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div>
+      <div class="section-hd" style="margin-bottom:6px">子代理</div>
+      <div id="drawerAgents" class="empty">—</div>
+    </div>
+    <div>
+      <div class="section-hd" style="margin-bottom:6px">最近任務</div>
+      <div id="drawerTasks" class="empty">—</div>
+    </div>
+    <div>
+      <div class="section-hd" style="margin-bottom:6px">服務</div>
+      <div id="drawerServices" class="empty">—</div>
+    </div>
+  </div>
+</aside>
+
+<!-- ── A REVIEW MODAL ── -->
+<div id="reviewAModal" class="review-overlay hidden">
+  <div class="review-card">
+    <div class="review-hd">
+      <div class="review-title">A 評分 — 人工審核</div>
+      <button class="btn sm" onclick="closeReviewA()">暫停</button>
+    </div>
+    <div>
+      <div class="review-prog-bar"><div id="revAProgFill" class="review-prog-fill" style="width:0%"></div></div>
+      <div class="review-counter-row">
+        <span id="revAProgLabel">0 / 0</span>
+        <div class="review-stat-chips">
+          <span class="badge" id="revAScoreChip" style="background:rgba(99,102,241,.1);color:var(--accent2);border-color:rgba(99,102,241,.25)">平均 —</span>
+        </div>
+      </div>
+    </div>
+    <div class="review-bubble user">
+      <div class="review-bubble-lbl">用戶訊息</div>
+      <div id="revAInput">—</div>
+    </div>
+    <div class="review-bubble ai">
+      <div class="review-bubble-lbl">AI 回覆</div>
+      <div id="revAReply">—</div>
+    </div>
+    <div class="review-meta">
+      <span id="revACategory" style="font-size:11px;color:var(--muted)"></span>
+      <span id="revAForbidden" style="font-size:11px;color:var(--red)"></span>
+    </div>
+    <textarea id="revANote" rows="2" placeholder="備註（可選）…"></textarea>
+    <div class="review-actions" style="flex-direction:column;gap:6px">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+        <button class="btn score-btn" data-score="1" onclick="submitA(1)" style="border-color:var(--red);color:var(--red);padding:10px 6px;text-align:center;font-size:12px;line-height:1.4"><b>1</b><br>語意理解錯誤<br>表達有問題</button>
+        <button class="btn score-btn" data-score="2" onclick="submitA(2)" style="border-color:#f97316;color:#f97316;padding:10px 6px;text-align:center;font-size:12px;line-height:1.4"><b>2</b><br>勉強能夠表達<br>但還不行</button>
+        <button class="btn score-btn" data-score="3" onclick="submitA(3)" style="border-color:var(--amber);color:var(--amber);padding:10px 6px;text-align:center;font-size:12px;line-height:1.4"><b>3</b><br>沒接到情緒敘事<br>還能更好</button>
+        <button class="btn score-btn" data-score="4" onclick="submitA(4)" style="border-color:#86efac;color:#86efac;padding:10px 6px;text-align:center;font-size:12px;line-height:1.4"><b>4</b><br>很不錯了<br>缺少人的感覺</button>
+        <button class="btn score-btn" data-score="5" onclick="submitA(5)" style="border-color:var(--green);color:var(--green);padding:10px 6px;text-align:center;font-size:12px;line-height:1.4"><b>5</b><br>完美</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── B PREFERENCE MODAL ── -->
+<div id="reviewBModal" class="review-overlay hidden">
+  <div class="review-card" style="max-width:900px">
+    <div class="review-hd">
+      <div class="review-title">B 偏好評分 — 哪個回應更好？</div>
+      <button class="btn sm" onclick="closeReviewB()">暫停</button>
+    </div>
+    <div>
+      <div class="review-prog-bar"><div id="revBProgFill" class="review-prog-fill" style="width:0%"></div></div>
+      <div class="review-counter-row">
+        <span id="revBProgLabel">0 / 0</span>
+        <div class="review-stat-chips">
+          <span class="badge idle" id="revBAbetterChip">A: 0</span>
+          <span class="badge ready" id="revBBbetterChip">B: 0</span>
+          <span class="badge" id="revBTieChip" style="background:rgba(99,102,241,.1);color:var(--accent2);border-color:rgba(99,102,241,.25)">平手: 0</span>
+        </div>
+      </div>
+    </div>
+    <div class="review-bubble user">
+      <div class="review-bubble-lbl">用戶訊息</div>
+      <div id="revBInput">—</div>
+    </div>
+    <div class="pref-cols">
+      <div class="pref-col" id="prefColA">
+        <div class="pref-col-lbl" id="prefLabelA">A</div>
+        <div class="pref-col-text" id="revBResponseA">—</div>
+      </div>
+      <div class="pref-col" id="prefColB">
+        <div class="pref-col-lbl" id="prefLabelB">B</div>
+        <div class="pref-col-text" id="revBResponseB">—</div>
+      </div>
+    </div>
+    <div class="review-actions" style="justify-content:center;gap:10px">
+      <button class="btn" style="flex:1;max-width:150px;padding:10px" onclick="submitB('a_better')">A 更好</button>
+      <button class="btn" style="flex:1;max-width:120px;padding:10px" onclick="submitB('tie')">差不多</button>
+      <button class="btn approve" style="flex:1;max-width:150px;padding:10px" onclick="submitB('b_better')">B 更好</button>
+      <button class="btn sm" onclick="submitB('skip')" style="align-self:center">跳過</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const E = id => document.getElementById(id);
+const show = (id, v) => { const el = E(id); if (!el) return; el.textContent = (v === undefined || v === null || v === '') ? '—' : String(v); };
+const clearAll = (...ids) => ids.forEach(id => show(id, null));
+
+function setBadge(id, state) {
+  const el = E(id); if (!el) return;
+  const map = { ready:['ready','就緒'], running:['running','進行中'], idle:['idle','閒置'], failed:['failed','失敗'] };
+  const [cls, label] = map[state] || map.failed;
+  el.className = `badge ${cls}`; el.textContent = label;
+}
+
+function getToken() {
+  const urlToken = new URLSearchParams(window.location.search).get('teamToken') || '';
+  return urlToken || localStorage.getItem('teamToken') || '';
+}
+async function j(url, opts) {
+  const r = await fetch(url, { cache:'no-store', ...opts, headers: { 'x-team-token': getToken(), ...(opts?.headers||{}) } });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function line(svgId, rows, key, color) {
+  const s = E(svgId); if (!s) return; s.innerHTML = '';
+  if (!Array.isArray(rows) || !rows.length) { s.innerHTML = `<text x='50' y='18' fill='#5c6a82' font-size='3' text-anchor='middle'>暫無資料</text>`; return; }
+  const vals = rows.map(x => Number(x[key])).filter(v => Number.isFinite(v));
+  if (!vals.length) { s.innerHTML = `<text x='50' y='18' fill='#5c6a82' font-size='3' text-anchor='middle'>暫無資料</text>`; return; }
+  const min = Math.min(...vals), max = Math.max(...vals), span = (max - min) || 1;
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1 || 1)) * 100},${36 - ((v - min) / span) * 30}`).join(' ');
+  const area = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  area.setAttribute('points', `0,37 ${pts} 100,37`);
+  area.setAttribute('fill', color); area.setAttribute('fill-opacity', '0.07');
+  const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  poly.setAttribute('fill', 'none'); poly.setAttribute('stroke', color); poly.setAttribute('stroke-width', '1.4'); poly.setAttribute('points', pts);
+  s.appendChild(area); s.appendChild(poly);
+}
+
+function setStep(id, st) {
+  const d = E(id); if (!d) return;
+  d.className = 'pipe-dot' + (st === 'green' ? ' green' : st === 'amber' ? ' amber' : st === 'red' ? ' red' : '');
+}
+
+function setProgress(fillId, processed, total, pct) {
+  const fill = E(fillId); if (!fill) return;
+  let p = Number(pct);
+  if (!Number.isFinite(p)) { const a = Number(processed), b = Number(total); p = (Number.isFinite(a) && Number.isFinite(b) && b > 0) ? (a * 100 / b) : 0; }
+  fill.style.width = `${Math.max(0, Math.min(100, p)).toFixed(1)}%`;
+}
+
+function setTrainState(s) {
+  const st = (s || '').toString().toLowerCase();
+  const el = E('trainState'); if (!el) return;
+  if (st.includes('run'))   { el.className = 'badge running'; el.textContent = '訓練中'; return; }
+  if (st.includes('pause')) { el.className = 'badge running'; el.textContent = '已暫停';  return; }
+  el.className = 'badge idle'; el.textContent = '閒置';
+}
+
+function syncDrawer() {
+  const ag = E('agentList'), ta = E('taskList'), sv = E('svcList');
+  if (E('drawerAgents')) E('drawerAgents').innerHTML = (ag && ag.innerHTML) || '—';
+  if (E('drawerTasks'))  E('drawerTasks').innerHTML  = (ta && ta.innerHTML) || '—';
+  if (E('drawerServices')) E('drawerServices').innerHTML = (sv && sv.innerHTML) || '—';
+}
+
+let convCache = [], convFilter = 'all';
+function passFilter(x) {
+  if (convFilter === 'all') return true;
+  if (convFilter === 'unscored') return x.aScore === undefined || x.aScore === null || x.aScore === '';
+  if (convFilter === 'low') return Number(x.aScore) < 6;
+  if (convFilter === 'rejected') return (x.preference || x.chosenRejected || '').toLowerCase().includes('rejected');
+  if (convFilter === 'chosen') return (x.preference || x.chosenRejected || '').toLowerCase().includes('chosen');
+  return true;
+}
+function renderConv() {
+  const box = E('convList'); box.innerHTML = '';
+  const rows = convCache.filter(passFilter);
+  if (!rows.length) { box.innerHTML = `<div class="empty">暫無資料</div>`; return; }
+  rows.forEach(x => {
+    const c = document.createElement('div'); c.className = 'conv-item';
+    c.innerHTML = `
+      <div class="conv-box"><div class="conv-lbl">USER</div><div>${x.userPrompt||x.user||'—'}</div></div>
+      <div class="conv-box"><div class="conv-lbl">BASE</div><div>${x.baseReply||x.baseOutput||'—'}</div></div>
+      <div class="conv-box"><div class="conv-lbl">LORA</div><div>${x.loraReply||x.loraOutput||'—'}</div></div>
+      <div class="conv-meta">
+        <div class="conv-box"><div class="conv-lbl">Score</div>${x.aScore??'—'}</div>
+        <div class="conv-box"><div class="conv-lbl">Pref</div>${x.preference||x.chosenRejected||'—'}</div>
+        <div class="conv-box"><div class="conv-lbl">Drift</div>${x.drift||'—'}</div>
+      </div>`;
+    box.appendChild(c);
+  });
+}
+
+// ── LOADERS ──
+async function loadOverview() {
+  try {
+    const d = await j('/api/pipeline/status');
+    show('runId', d.runId || d.run);
+    show('runDataset', `${d.uploadedSamples ?? d.totalSamples ?? '—'} samples`);
+    show('runModel', d.baseModel || d.model);
+    setStep('st-dataset', Number(d.uploadedSamples || d.totalSamples) > 0 ? 'green' : 'gray');
+    setStep('st-ascore', Number(d.aReviewed || d.aReviewedCount) > 0 ? 'amber' : 'gray');
+    setStep('st-pref', (d.bStatus || '').toLowerCase().includes('ready') ? 'green' : 'gray');
+    setStep('st-train', (d.status || '').toLowerCase().includes('running') ? 'amber' : 'gray');
+    setStep('st-adapter', d.adapter ? 'green' : 'gray');
+  } catch { clearAll('runId','runDataset','runModel'); ['st-dataset','st-ascore','st-pref','st-train','st-adapter'].forEach(id => setStep(id, 'red')); }
+}
+
+async function loadFiles() {
+  try {
+    const d = await j('/api/dataset/files');
+    const rows = Array.isArray(d) ? d : (d.files || []);
+    const t = E('fileTable'); t.innerHTML = '';
+    if (!rows.length) { t.innerHTML = `<tr><td colspan="3" style="color:var(--muted)">暫無資料</td></tr>`; setBadge('fileBadge','failed'); clearAll('dsSamples','dsAvgTokens','dsMaxTokens','dsDupes'); return; }
+    let maxSamples = 0, tokenSum = 0, tokenCnt = 0, maxTok = 0, dupes = 0;
+    rows.forEach(x => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${x.file||x.name||'—'}</td><td>${x.samples??'—'}</td><td>${x.schemaStatus||x.schema||'—'}</td>`;
+      t.appendChild(tr);
+      // Use max instead of sum: multiple files share the same audit total
+      maxSamples = Math.max(maxSamples, Number(x.samples || 0));
+      const avgTok = Number(x.avgTokens || x.avgToken || x.averageTokens);
+      if (Number.isFinite(avgTok)) { tokenSum += avgTok; tokenCnt++; }
+      const mx = Number(x.maxTokens || x.maxToken);
+      if (Number.isFinite(mx)) maxTok = Math.max(maxTok, mx);
+      dupes += Number(x.duplicates || x.dupCount || 0);
+    });
+    show('dsSamples', maxSamples || null); show('dsAvgTokens', tokenCnt ? (tokenSum / tokenCnt).toFixed(1) : null);
+    show('dsMaxTokens', maxTok || null); show('dsDupes', dupes || null);
+    setBadge('fileBadge', 'ready');
+  } catch { E('fileTable').innerHTML = `<tr><td colspan="3" style="color:var(--muted)">暫無資料</td></tr>`; clearAll('dsSamples','dsAvgTokens','dsMaxTokens','dsDupes'); setBadge('fileBadge','failed'); }
+}
+
+async function loadValidation() {
+  try { const d = await j('/api/dataset/validation'); show('valMissing',d.missingFields); show('valIllegal',d.illegalChars); show('valEmpty',d.emptySamples); show('valDup',d.duplicateRate); setBadge('valBadge','ready'); }
+  catch { clearAll('valMissing','valIllegal','valEmpty','valDup'); setBadge('valBadge','failed'); }
+}
+
+async function loadA() {
+  try {
+    const d = await j('/api/scoring/a/status');
+    show('aCoverage', d.coverage); show('aPersona', d.personaConsistency);
+    return d;
+  } catch { clearAll('aCoverage','aPersona'); setBadge('aBadge','failed'); return null; }
+}
+
+async function loadB() {
+  // B is unlocked by human A review completion, handled in loadReviewAProgress
+}
+
+async function loadTrain() {
+  try {
+    const s = await j('/api/train/status');
+    show('trBase', s.baseModel); show('trAdapter', s.outputAdapter); show('trRank', s.rank);
+    show('trAlpha', s.alpha); show('trDrop', s.dropout);
+    show('trBatchGrad', `${s.batchSize ?? '—'} / ${s.gradAccum ?? '—'}`);
+    show('trGpu', (s.gpuUtil !== null && s.gpuUtil !== undefined) ? `${s.gpuUtil}%` : (s.gpu && s.gpu !== '—' ? s.gpu : null));
+    show('trVram', s.gpuVram || s.vram); show('trTps', s.tokensPerSec || s.tps);
+    show('trSps', s.samplesPerSec || s.sps);
+    show('trGradNorm', s.gradNorm != null ? Number(s.gradNorm).toFixed(4) : null);
+    setTrainState(s.state || (s.running ? 'running' : 'idle'));
+    try {
+      const m = await j('/api/train/metrics');
+      const rows = Array.isArray(m) ? m : (m.metrics || []);
+      line('lossSvg', rows, 'loss', '#6366f1'); line('lrSvg', rows, 'learningRate', '#22c55e');
+      const last = rows.length ? rows[rows.length - 1] : {};
+      show('trStep', last.step ?? s.step); show('trEpoch', last.epoch ?? s.epoch);
+      const lossVal = last.loss ?? s.loss; show('trLoss', lossVal != null ? Number(lossVal).toFixed(4) : null);
+      const lrVal = last.learningRate ?? s.learningRate; show('trLr', lrVal != null ? Number(lrVal).toExponential(3) : null);
+      const logLines = rows.slice(-20).map(r => `step ${r.step ?? '?'} | loss ${r.loss ?? '?'}${r.checkpoint ? ' | saving checkpoint…' : ''}`);
+      E('trainingLog').textContent = logLines.length ? logLines.join('\n') : '—';
+    } catch { line('lossSvg',[],'loss','#6366f1'); line('lrSvg',[],'learningRate','#22c55e'); clearAll('trStep','trEpoch','trLoss','trLr'); E('trainingLog').textContent = '—'; }
+    try {
+      const h = await j('/api/train/history');
+      const items = Array.isArray(h) ? h : (h.runs || h.history || []);
+      const box = E('expHistory'); box.innerHTML = '';
+      if (!items.length) { box.innerHTML = `<div class="exp-item">暫無歷史</div>`; }
+      else { items.slice(0, 6).forEach((x, i) => { const el = document.createElement('div'); el.className = 'exp-item'; el.textContent = `Run #${x.id||i+1} | loss ${x.loss??'—'} | score ${x.score??'—'} | adapter ${x.adapter||'—'} | dataset ${x.dataset||'—'}`; box.appendChild(el); }); }
+    } catch { E('expHistory').innerHTML = `<div class="exp-item">暫無歷史</div>`; }
+    setBadge('trainBadge', s.running ? 'running' : 'ready');
+  } catch {
+    clearAll('trBase','trAdapter','trRank','trAlpha','trDrop','trBatchGrad','trGpu','trVram','trTps','trSps','trGradNorm','trStep','trEpoch','trLoss','trLr');
+    line('lossSvg',[],'loss','#6366f1'); line('lrSvg',[],'learningRate','#22c55e');
+    E('trainingLog').textContent = '—'; E('expHistory').innerHTML = `<div class="exp-item">暫無歷史</div>`;
+    setTrainState('idle'); setBadge('trainBadge','failed');
+  }
+}
+
+async function loadConv() {
+  try { const d = await j('/api/conversation/samples'); convCache = Array.isArray(d) ? d : (d.samples || []); renderConv(); setBadge('convBadge', convCache.length ? 'ready' : 'failed'); }
+  catch { convCache = []; renderConv(); setBadge('convBadge','failed'); }
+}
+
+async function loadSys() {
+  try {
+    const d = await j('/api/system/metrics');
+    show('sysGpu', (d.gpuUtil !== null && d.gpuUtil !== undefined) ? `${d.gpuUtil}%` : (d.gpu && d.gpu !== '—' ? d.gpu : null));
+    show('sysVram', d.gpuVram || d.vram || null);
+    show('sysCpuRam', `${d.cpu !== undefined ? d.cpu + '%' : '—'} / ${d.ram || '—'}`);
+    const gpuPct = Math.min(100, Number(d.gpuUtil || 0));
+    const cpuPct = Math.min(100, Number(d.cpu || 0));
+    const vramPct = (() => { const v = String(d.gpuVram || d.vram || ''); const m = v.match(/(\d+(?:\.\d+)?)\s*GB?\s*\/\s*(\d+(?:\.\d+)?)/i); return m ? (Number(m[1]) / Number(m[2])) * 100 : 0; })();
+    const gb = E('sysGpuBar'); if (gb) gb.style.width = `${gpuPct}%`;
+    const cb = E('sysCpuBar'); if (cb) cb.style.width = `${cpuPct}%`;
+    const vb = E('sysVramBar'); if (vb) vb.style.width = `${vramPct}%`;
+    const rows = Array.isArray(d.history) ? d.history : (Array.isArray(d.metrics) ? d.metrics : [d]);
+    line('sysSvg', rows, 'gpuUtil', '#22c55e');
+    setBadge('sysBadge','ready');
+  } catch { clearAll('sysGpu','sysVram','sysCpuRam'); line('sysSvg',[],'gpuUtil','#22c55e'); setBadge('sysBadge','failed'); }
+}
+
+async function loadLogs() {
+  try {
+    const d = await j('/api/audit/logs');
+    const rows = Array.isArray(d) ? d : (d.logs || []);
+    const t = E('logTable'); t.innerHTML = '';
+    if (!rows.length) { t.innerHTML = `<tr><td colspan="4" style="color:var(--muted);text-align:center">暫無資料</td></tr>`; setBadge('logBadge','failed'); return; }
+    rows.forEach(x => { const tr = document.createElement('tr'); tr.innerHTML = `<td>${x.time||x.ts||'—'}</td><td>${x.actor||'—'}</td><td>${x.action||'—'}</td><td>${x.detail||'—'}</td>`; t.appendChild(tr); });
+    setBadge('logBadge','ready');
+  } catch { E('logTable').innerHTML = `<tr><td colspan="4" style="color:var(--muted);text-align:center">暫無資料</td></tr>`; setBadge('logBadge','failed'); }
+}
+
+function makeAgentCard(name, status, desc) {
+  const el = document.createElement('div'); el.className = 'agent-card';
+  const isActive = status === 'active' || status === 'running';
+  el.innerHTML = `<span>${name || '—'}</span><span class="badge ${isActive ? 'ready' : 'idle'}">${status || '—'}</span>`;
+  return el;
+}
+
+async function loadAgents() {
+  try {
+    const d = await j('/api/agents'); const rows = Array.isArray(d) ? d : (d.agents || []);
+    const b = E('agentList'); b.innerHTML = '';
+    if (!rows.length) { b.innerHTML = `<div class="empty">暫無資料</div>`; syncDrawer(); return; }
+    rows.forEach(x => b.appendChild(makeAgentCard(x.name, x.status)));
+    syncDrawer();
+  } catch { if (E('agentList')) E('agentList').innerHTML = `<div class="empty">暫無資料</div>`; syncDrawer(); }
+}
+
+async function loadTasks() {
+  try {
+    const d = await j('/api/tasks/recent'); const rows = Array.isArray(d) ? d : (d.tasks || []);
+    const b = E('taskList'); b.innerHTML = '';
+    if (!rows.length) { b.innerHTML = `<div class="empty">暫無資料</div>`; syncDrawer(); return; }
+    rows.forEach(x => { const el = document.createElement('div'); el.className = 'agent-card'; el.innerHTML = `<span style="font-size:12px">${x.title||x.action||'—'}</span><span style="font-size:10px;color:var(--muted)">${x.time||x.ts||'—'}</span>`; b.appendChild(el); });
+    syncDrawer();
+  } catch { if (E('taskList')) E('taskList').innerHTML = `<div class="empty">暫無資料</div>`; syncDrawer(); }
+}
+
+async function loadSvcs() {
+  try {
+    const d = await j('/api/services'); const rows = Array.isArray(d) ? d : (d.services || []);
+    const b = E('svcList'); b.innerHTML = '';
+    if (!rows.length) { b.innerHTML = `<div class="empty">暫無資料</div>`; syncDrawer(); return; }
+    rows.forEach(x => { const el = document.createElement('div'); el.className = 'agent-card'; const up = x.status==='up'||x.status==='active'; el.innerHTML = `<span>${x.name||'—'}</span><span class="badge ${up?'ready':'idle'}">${x.status||'—'}</span>`; b.appendChild(el); });
+    syncDrawer();
+  } catch { if (E('svcList')) E('svcList').innerHTML = `<div class="empty">暫無資料</div>`; syncDrawer(); }
+}
+
+async function infer(action) {
+  setBadge('inferBadge','running');
+  try {
+    const r = await fetch('/api/inference', { method:'POST', headers:{'Content-Type':'application/json','x-team-token':getToken()}, body:JSON.stringify({ action, prompt: E('inferInput').value||'', systemPersona: E('inferPersona').value||'' }) });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json(); E('inferOut').textContent = d.output || d.message || '—';
+    setBadge('inferBadge','ready');
+  } catch { E('inferOut').textContent = '請求失敗'; setBadge('inferBadge','failed'); }
+}
+
+async function trainControl(action) {
+  setBadge('trainBadge','running');
+  try { const r = await fetch('/api/train/control', { method:'POST', headers:{'Content-Type':'application/json','x-team-token':getToken()}, body:JSON.stringify({ action }) }); if (!r.ok) throw new Error(r.status); await loadTrain(); }
+  catch { setBadge('trainBadge','failed'); }
+}
+
+// ── REVIEW A (Human A Scoring) ──────────────────────────────────────────────
+let _revACurrentId = null, _revAStats = { scores:{}, done:0, total:0 };
+
+async function loadReviewAProgress() {
+  try {
+    const p = await j('/api/review/a/progress');
+    if (!p.initialized) return;
+    _revAStats = p;
+    E('aHumanStats').style.display = '';
+    for (let i = 1; i <= 5; i++) show(`aScore${i}`, (p.scores || {})[i] || 0);
+    show('aProcessed', p.done); show('aRemaining', p.pending);
+    setProgress('aProgress', p.done, p.total, null);
+    const allDone = p.pending === 0;
+    setBadge('aBadge', allDone ? 'ready' : (p.done > 0 ? 'running' : 'idle'));
+    if (allDone) { E('startB').disabled = false; show('bMsg', 'A 評分完成，可開始偏好評分'); }
+    setStep('st-ascore', allDone ? 'green' : (p.done > 0 ? 'amber' : 'gray'));
+  } catch {}
+}
+
+async function openReviewA() {
+  const source = E('reviewASource')?.value || 'training';
+  // Check if queue already exists
+  try {
+    const prog = await j('/api/review/a/progress');
+    if (prog.initialized && prog.pending > 0) {
+      // Queue exists with pending items — just open
+      await fetchAndShowA(); return;
+    }
+    if (prog.initialized && prog.pending === 0) {
+      // All done — ask if re-init
+      if (!confirm(`佇列已全部完成（${prog.total} 條）。要重新建立嗎？`)) return;
+    }
+  } catch {}
+  // Init new queue
+  try {
+    const r = await fetch('/api/review/a/init', { method:'POST', headers:{'Content-Type':'application/json','x-team-token':getToken()}, body: JSON.stringify({ source }) });
+    const d = await r.json();
+    if (!r.ok) { alert(d.message || '初始化失敗'); return; }
+    alert(`已建立佇列：${d.total} 條（來源：${d.source}）`);
+  } catch { alert('無法連線'); return; }
+  await fetchAndShowA();
+}
+
+async function resetReviewA() {
+  if (!confirm('確定要清除現有佇列並重建？已審核的進度將遺失。')) return;
+  const source = E('reviewASource')?.value || 'training';
+  try {
+    await fetch('/api/review/a/reset', { method:'POST', headers:{'x-team-token':getToken()} });
+    const r = await fetch('/api/review/a/init', { method:'POST', headers:{'Content-Type':'application/json','x-team-token':getToken()}, body: JSON.stringify({ source }) });
+    const d = await r.json();
+    if (!r.ok) { alert(d.message || '初始化失敗'); return; }
+    alert(`重建完成：${d.total} 條（來源：${d.source}）`);
+    await loadReviewAProgress();
+  } catch { alert('無法連線'); }
+}
+
+async function fetchAndShowA() {
+  try {
+    const d = await j('/api/review/a/next');
+    if (d.finished) {
+      E('reviewAModal').classList.add('hidden');
+      alert(`評分完成！共 ${d.total} 條，全部已審核。`);
+      await loadReviewAProgress(); return;
+    }
+    _revACurrentId = d.item.id;
+    _revAStats = { done: d.done, total: d.total };
+    // Update progress UI
+    const pct = d.total > 0 ? (d.done / d.total * 100).toFixed(1) : 0;
+    E('revAProgFill').style.width = pct + '%';
+    E('revAProgLabel').textContent = `${d.done} / ${d.total}`;
+    // Update avg score chip
+    const prog = await j('/api/review/a/progress').catch(()=>null);
+    if (prog?.scores && prog.done > 0) {
+      const total = Object.entries(prog.scores).reduce((s,[k,v])=>s+Number(k)*v,0);
+      const avg = (total / prog.done).toFixed(1);
+      E('revAScoreChip').textContent = `平均 ${avg}`;
+    }
+    // Highlight last selected score button
+    document.querySelectorAll('.score-btn').forEach(b => b.style.opacity = '1');
+    // Show item
+    E('revAInput').textContent  = d.item.input || '—';
+    E('revAReply').textContent  = d.item.reply || '—';
+    E('revANote').value = '';
+    E('revACategory').textContent = d.item.category ? `分類：${d.item.category}` : '';
+    E('revAForbidden').textContent = d.item.forbiddenHits?.length
+      ? `⚠ 禁用詞：${d.item.forbiddenHits.join(', ')}` : '';
+    E('reviewAModal').classList.remove('hidden');
+  } catch(err) { alert('無法取得下一條：' + err.message); }
+}
+
+async function submitA(score) {
+  if (!_revACurrentId) return;
+  // Highlight selected button
+  document.querySelectorAll('.score-btn').forEach(b => {
+    b.style.opacity = Number(b.dataset.score) === score ? '1' : '0.35';
+  });
+  try {
+    await j('/api/review/a/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: _revACurrentId, score, note: E('revANote').value }) });
+  } catch(err) { alert('提交失敗：' + err.message); return; }
+  await fetchAndShowA();
+}
+
+function closeReviewA() {
+  E('reviewAModal').classList.add('hidden');
+  loadReviewAProgress();
+}
+
+// ── REVIEW B (Preference / DPO) ──────────────────────────────────────────────
+let _revBCurrentId = null;
+
+async function loadReviewBProgress() {
+  try {
+    const p = await j('/api/review/b/progress');
+    if (!p.initialized) return;
+    E('bHumanStats').style.display = '';
+    show('bAbetter', p.a_better); show('bBbetter', p.b_better); show('bTie', p.tie);
+    show('bProcessed', p.done); show('bRemaining', p.total - p.done);
+    setProgress('bProgress', p.done, p.total, null);
+    const allDone = p.done >= p.total && p.total > 0;
+    setBadge('bBadge', allDone ? 'ready' : (p.done > 0 ? 'running' : 'idle'));
+    show('bPairLabel', p.labelA && p.labelB ? `${p.labelA} vs ${p.labelB}` : null);
+    setStep('st-pref', allDone ? 'green' : (p.done > 0 ? 'amber' : 'gray'));
+  } catch {}
+}
+
+async function openReviewB() {
+  try {
+    const r = await fetch('/api/review/b/init', { method:'POST', headers:{'x-team-token':getToken()} });
+    if (!r.ok) { const e = await r.json(); alert(e.message || 'B 初始化失敗'); return; }
+  } catch { alert('無法連線'); return; }
+  await fetchAndShowB();
+}
+
+async function fetchAndShowB() {
+  try {
+    const d = await j('/api/review/b/next');
+    if (d.done) {
+      E('reviewBModal').classList.add('hidden');
+      alert(`偏好評分完成！共 ${d.total} 對。`);
+      await loadReviewBProgress(); return;
+    }
+    _revBCurrentId = d.pair.id;
+    const pct = d.total > 0 ? (d.done / d.total * 100).toFixed(1) : 0;
+    E('revBProgFill').style.width = pct + '%';
+    E('revBProgLabel').textContent = `${d.done} / ${d.total}`;
+    E('revBAbetterChip').textContent = `A: ${d.a_better || 0}`;
+    E('revBBbetterChip').textContent = `B: ${d.b_better || 0}`;
+    E('revBTieChip').textContent     = `平手: ${d.tie || 0}`;
+    E('revBInput').textContent = d.pair.input || '—';
+    E('prefLabelA').textContent = d.labelA || 'A';
+    E('prefLabelB').textContent = d.labelB || 'B';
+    E('revBResponseA').textContent = d.pair.responseA || '—';
+    E('revBResponseB').textContent = d.pair.responseB || '—';
+    E('prefColA').classList.remove('selected');
+    E('prefColB').classList.remove('selected');
+    E('reviewBModal').classList.remove('hidden');
+  } catch(err) { alert('無法取得下一對：' + err.message); }
+}
+
+async function submitB(preference) {
+  if (!_revBCurrentId) return;
+  if (preference === 'a_better') E('prefColA').classList.add('selected');
+  if (preference === 'b_better') E('prefColB').classList.add('selected');
+  try {
+    await j('/api/review/b/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: _revBCurrentId, preference }) });
+  } catch(err) { alert('提交失敗：' + err.message); return; }
+  setTimeout(fetchAndShowB, preference === 'skip' ? 0 : 250);
+}
+
+function closeReviewB() {
+  E('reviewBModal').classList.add('hidden');
+  loadReviewBProgress();
+}
+
+// ── INFERENCE GENERATION JOB ─────────────────────────────────────────────────
+let _genPollTimer = null;
+
+async function loadGenStatus() {
+  try {
+    const d = await j('/api/review/a/generate/status');
+    show('genDone', d.done); show('genTotal', d.total || 5000); show('genPct', d.pct);
+    E('genProgFill').style.width = Math.min(100, Number(d.pct) || 0) + '%';
+    if (d.running) {
+      setBadge('genBadge', 'running');
+      show('genStatus', `生成中… 已完成 ${d.done} / ${d.total}，失敗 ${d.failed || 0}`);
+    } else if (d.done > 0) {
+      setBadge('genBadge', 'ready');
+      show('genStatus', `已完成 ${d.done} 條${d.failed ? `，失敗 ${d.failed}` : ''}${d.aborted ? '（已停止）' : ''}`);
+    } else {
+      setBadge('genBadge', 'idle');
+    }
+  } catch {}
+}
+
+async function startGeneration() {
+  const concurrency = Number(E('genConcurrency')?.value) || 3;
+  try {
+    const d = await j('/api/review/a/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ concurrency }) });
+    if (!d.ok) { alert(d.message || '啟動失敗'); return; }
+    show('genStatus', `已啟動，並行 ${concurrency}，待生成 ${d.remaining} 條`);
+    setBadge('genBadge', 'running');
+    clearInterval(_genPollTimer);
+    _genPollTimer = setInterval(loadGenStatus, 3000);
+  } catch(e) { alert('連線失敗：' + e.message); }
+}
+
+async function stopGeneration() {
+  try {
+    await j('/api/review/a/generate/stop', { method:'POST' });
+    clearInterval(_genPollTimer);
+    setBadge('genBadge', 'idle');
+    show('genStatus', '已停止，進度已保存，可繼續生成');
+  } catch {}
+}
+
+async function buildQueueFromInference() {
+  try {
+    const st = await j('/api/review/a/generate/status');
+    if (st.done === 0) { alert('尚無推論結果，請先執行生成'); return; }
+    if (st.running) { alert('生成仍在進行中，請等待完成或停止後再建立佇列'); return; }
+    const r = await fetch('/api/review/a/reset', { method:'POST', headers:{'x-team-token':getToken()} });
+    const d = await j('/api/review/a/init', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ source:'inference' }) });
+    if (!d.ok) { alert(d.message || '建立失敗'); return; }
+    alert(`✓ 評分佇列已建立：${d.total} 條推論結果`);
+    await loadReviewAProgress();
+  } catch(e) { alert('失敗：' + e.message); }
+}
+
+// ── TRAINING LIVE PROGRESS ────────────────────────────────────────────────────
+async function loadTrainLive() {
+  try {
+    const d = await j('/api/train/live');
+    show('liveStep', d.currentStep); show('liveTotalStep', d.totalSteps);
+    show('livePct', d.pct);
+    E('liveProgFill').style.width = Math.min(100, Number(d.pct) || 0) + '%';
+  } catch {}
+}
+
+// ── EVENTS ──
+for (const btn of document.querySelectorAll('.top-tab')) {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.top-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+    const page = E(`view-${btn.dataset.tab}`); if (page) page.classList.add('active');
+  });
+}
+
+E('openDrawer').addEventListener('click', () => E('drawer').classList.add('open'));
+E('closeDrawer').addEventListener('click', () => E('drawer').classList.remove('open'));
+E('runInfer').addEventListener('click', () => infer('run'));
+E('saveInfer').addEventListener('click', () => infer('save'));
+E('scoreInfer').addEventListener('click', () => infer('score'));
+// startB onclick is set inline in HTML
+E('trainStart').addEventListener('click', () => trainControl('start'));
+E('trainPause').addEventListener('click', () => trainControl('pause'));
+E('trainResume').addEventListener('click', () => trainControl('resume'));
+E('trainStop').addEventListener('click', () => trainControl('stop'));
+E('trainSaveCkpt').addEventListener('click', () => trainControl('save_checkpoint'));
+E('trainLoadCkpt').addEventListener('click', () => trainControl('load_checkpoint'));
+E('retryAll').addEventListener('click', loadAll);
+E('convFilters').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-filter]'); if (!b) return;
+  for (const x of E('convFilters').querySelectorAll('[data-filter]')) x.classList.remove('primary');
+  b.classList.add('primary');
+  convFilter = b.dataset.filter; renderConv();
+});
+
+async function loadAll() {
+  setBadge('globalBadge','running');
+  await Promise.all([
+    loadOverview(), loadA(), loadReviewAProgress(), loadReviewBProgress(), loadGenStatus(),
+    loadTrain(), loadTrainLive(), loadFiles(), loadValidation(),
+    loadConv(), loadSys(), loadLogs(), loadAgents(), loadTasks(), loadSvcs()
+  ]);
+  // Auto-start poll if generation was already running
+  const st = await j('/api/review/a/generate/status').catch(()=>null);
+  if (st?.running && !_genPollTimer) _genPollTimer = setInterval(loadGenStatus, 3000);
+  setBadge('globalBadge','ready');
+}
+loadAll();
+setInterval(loadTrainLive, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+    "name": "social_ai",
+    "version": "1.0.0",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js",
+        "eval": "node ai/eval/run_eval.js",
+        "eval:base": "node ai/eval/run_eval.js --label=base",
+        "eval:base:3b": "node ai/eval/run_eval.js --model=qwen2.5:3b --label=base_3b",
+        "eval:base:7b": "node ai/eval/run_eval.js --model=qwen2.5:7b --label=base_7b",
+        "eval:base:14b": "node ai/eval/run_eval.js --model=qwen2.5:14b --label=base_14b",
+        "eval:lora": "node ai/eval/run_eval.js --model=socialai-qwen3b-lora-local --label=lora_3b_local",
+        "eval:lora:3b": "wsl -d Ubuntu-22.04 -e bash -lc \"cd /mnt/c/Users/wu992/Desktop/socialAI/social_ai && source /root/socialai_lora_env/bin/activate && python ai/eval/run_eval_local_lora.py --base_model 'Qwen/Qwen2.5-3B-Instruct' --adapter_dir 'train/socialai_persona_3b_lora_v5_3' --cases 'train/eval_cases.json' --out 'train/eval_report_lora_3b_local.json' --label 'lora_3b_local'\"",
+        "eval:lora:7b": "wsl -d Ubuntu-22.04 -e bash -lc \"cd /mnt/c/Users/wu992/Desktop/socialAI/social_ai && source /root/socialai_lora_env/bin/activate && python ai/eval/run_eval_local_lora.py --base_model 'Qwen/Qwen2.5-7B-Instruct' --adapter_dir 'train/socialai_persona_7b_lora_v4' --cases 'train/eval_cases.json' --out 'train/eval_report_lora_7b_local.json' --label 'lora_7b_v4'\"",
+        "eval:lora:7b:dev": "wsl -d Ubuntu-22.04 -e bash -lc \"cd /mnt/c/Users/wu992/Desktop/socialAI/social_ai && source /root/socialai_lora_env/bin/activate && python ai/eval/run_eval_local_lora.py --base_model 'Qwen/Qwen2.5-7B-Instruct' --adapter_dir 'train/socialai_persona_7b_lora_v5' --cases 'train/eval_cases_dev_claim.json' --out 'train/eval_report_lora_7b_v5_dev.json' --label 'lora_7b_v5_dev'\"",
+        "eval:reflex": "node ai/eval/run_reflex_gate_eval.js --cases=ai/eval/reflex_adversarial_v2.json --out=train/reflex_gate_baseline_v2.json --label=reflex_gate_baseline_v2",
+        "eval:context-stress": "node ai/eval/run_context_stress.js --cases=ai/eval/reflex_adversarial_v2.json --out=train/context_stress_report.json --label=context_stress_v1",
+        "eval:action-smoke": "node ai/eval/run_action_planner_smoke.js",
+        "eval:conversation-momentum": "node ai/eval/run_conversation_momentum_eval.js",
+        "eval:persona": "node ai/eval/run_persona_mode_regression.js",
+        "eval:engage": "node ai/eval/run_engage_filter_regression.js",
+        "eval:memory": "node ai/eval/run_memory_regression.js",
+        "eval:group-bias": "node ai/eval/run_group_soft_bias_regression.js",
+        "eval:ego-gate-smoke": "node ai/eval/run_ego_gate_smoke.js",
+        "eval:judge-observation": "node ai/eval/run_post_judge_observation.js",
+        "eval:judge-last50": "node ai/eval/run_last50_state_snapshot.js",
+        "eval:mild-perturbation": "node ai/eval/run_mild_perturbation_observation.js",
+        "eval:priority-scheduler": "node ai/eval/run_priority_scheduler_smoke.js",
+        "test:llm-latency": "node scripts/test_llm_latency.js"
+    },
+    "dependencies": {
+        "axios": "^1.13.2",
+        "dotenv": "^17.3.1",
+        "express": "^4.18.2",
+        "msedge-tts": "^2.0.4",
+        "node-telegram-bot-api": "^0.61.0",
+        "playwright": "^1.58.2",
+        "ws": "^8.19.0"
+    }
+}

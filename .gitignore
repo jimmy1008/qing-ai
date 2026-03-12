@@ -1,0 +1,37 @@
+# ── 環境變數（含 Token / 密鑰）──
+.env
+.env.local
+.env*.local
+
+# ── Node.js ──
+node_modules/
+npm-debug.log*
+
+# ── 執行期日誌 ──
+logs/
+*.log
+server-*.log
+
+# ── LoRA 模型權重（GB 級，不上傳）──
+train/socialai_persona_*/
+train/socialai_persona_lora/
+unsloth_compiled_cache/
+
+# ── 訓練 / 推論 大型資料 ──
+train/inference_results.jsonl
+
+# ── 人工審核狀態（私人進度）──
+train/review_a_state.json
+train/review_b_state.json
+
+# ── 執行期狀態 ──
+memory/
+metrics/
+train/__pycache__/
+__pycache__/
+*.pyc
+
+# ── 系統 ──
+.DS_Store
+Thumbs.db
+desktop.ini

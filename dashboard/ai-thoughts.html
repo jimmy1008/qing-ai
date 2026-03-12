@@ -1,0 +1,77 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 內心 OS</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title-block">
+      <h1>AI 內心 OS</h1>
+      <div class="meta-row">
+        <span id="thoughtsUpdated">最後更新：--</span>
+      </div>
+    </div>
+    <nav class="topbar-nav">
+      <button class="btn" type="button" onclick="location.href='/'">總覽</button>
+      <button class="btn" type="button" onclick="location.href='/threads-moderation'">Threads 審核</button>
+      <button class="btn" type="button" onclick="location.href='/ai-cognition'">AI 認知</button>
+      <button class="btn active" type="button">AI 內心 OS</button>
+      <div class="nav-sep"></div>
+      <button class="btn" type="button" onclick="refreshThoughts()">刷新</button>
+    </nav>
+  </header>
+
+  <main class="dashboard-grid">
+    <section class="panel">
+      <div class="panel-title">核心狀態</div>
+      <div class="card-grid compact-grid">
+        <div class="card compact-card"><div class="card-title">情緒</div><div id="thoughtMood" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">情緒分數</div><div id="thoughtMoodScore" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">內在驅動值</div><div id="thoughtDrive" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">當前意圖</div><div id="thoughtIntent" class="value">--</div></div>
+      </div>
+      <div id="thoughtWhyNow" class="alert-box compact">--</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">最近在想什麼</div>
+      <div id="lastTalkSummary" class="alert-box compact">--</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">情緒影響紀錄</div>
+      <div id="thoughtEmotionEvents" class="moderation-list"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">主動狀態</div>
+      <div id="initiativeStatus" class="alert-box compact">--</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">Threads 狀態</div>
+      <div class="card-grid compact-grid">
+        <div class="card compact-card"><div class="card-title">活動時間內</div><div id="threadsActive" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">滑文衝動</div><div id="threadsUrge" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">上次滑文</div><div id="threadsLastScroll" class="value small">--</div></div>
+      </div>
+      <div id="threadsSchedulerState" class="alert-box compact">--</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">最近互動</div>
+      <div id="thoughtInteractions" class="moderation-list"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">熟悉度排行</div>
+      <div id="thoughtFamiliarUsers" class="moderation-list"></div>
+    </section>
+  </main>
+
+  <script src="ai_thoughts.js"></script>
+</body>
+</html>

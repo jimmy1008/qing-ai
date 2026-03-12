@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 認知監控</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title-block">
+      <h1>AI 認知監控</h1>
+      <div class="meta-row">
+        <span id="cognitionUpdated">最後更新：--</span>
+      </div>
+    </div>
+    <nav class="topbar-nav">
+      <button class="btn" type="button" onclick="location.href='/'">總覽</button>
+      <button class="btn" type="button" onclick="location.href='/threads-moderation'">Threads 審核</button>
+      <button class="btn active" type="button">AI 認知</button>
+      <div class="nav-sep"></div>
+      <button class="btn" type="button" onclick="refreshAll()">刷新</button>
+    </nav>
+  </header>
+
+  <main class="dashboard-grid">
+    <section class="panel">
+      <div class="panel-title">核心狀態</div>
+      <div class="card-grid compact-grid">
+        <div class="card compact-card"><div class="card-title">心情</div><div id="moodValue" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">心情分數</div><div id="moodScore" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">內在驅動值</div><div id="driveValue" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">當前意圖</div><div id="intentValue" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">活動時段</div><div id="activityWindow" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">活躍對話數</div><div id="activeChatCount" class="value">--</div></div>
+      </div>
+      <div id="moodReason" class="alert-box compact">--</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">Threads 狀態</div>
+      <div class="card-grid compact-grid">
+        <div class="card compact-card"><div class="card-title">滑文動機</div><div id="threadsUrge" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">上次滑文</div><div id="threadsLastScroll" class="value small">--</div></div>
+        <div class="card compact-card"><div class="card-title">未回應主動次數</div><div id="unansweredInitiations" class="value">--</div></div>
+        <div class="card compact-card"><div class="card-title">暫停對話</div><div id="pausedChats" class="value small">--</div></div>
+      </div>
+      <div id="threadsSchedulerState" class="alert-box compact">--</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">主動狀態</div>
+      <div id="initiativeStatus" class="alert-box compact">--</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">自我敘事</div>
+      <div id="whyNow" class="alert-box compact">--</div>
+      <div id="lastTalkSummary" class="alert-box compact" style="margin-top:8px">--</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">最近互動</div>
+      <div id="recentInteractions" class="moderation-list"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">情緒事件</div>
+      <div id="emotionalEvents" class="moderation-list"></div>
+    </section>
+
+    <section class="panel panel-full">
+      <div class="panel-title">熟悉度排行</div>
+      <div id="topFamiliarUsers" class="moderation-list"></div>
+    </section>
+
+    <section class="panel panel-full">
+      <div class="panel-title">分層決策遙測（Id / Ego / Superego）</div>
+      <div class="card-grid compact-grid">
+        <div class="card compact-card"><div class="card-title">Id impulses</div><div id="rtIdImpulses" class="value small">--</div></div>
+        <div class="card compact-card"><div class="card-title">Id affect</div><div id="rtIdAffect" class="value small">--</div></div>
+        <div class="card compact-card"><div class="card-title">Ego archetype</div><div id="rtEgoArchetype" class="value small">--</div></div>
+        <div class="card compact-card"><div class="card-title">Alignment</div><div id="rtAlignmentScore" class="value small">--</div></div>
+      </div>
+      <div id="rtSceneGate" class="alert-box compact">sceneGate: --</div>
+      <div id="rtMemoryGate" class="alert-box compact" style="margin-top:8px">memoryGate: --</div>
+      <div id="rtIntimacyGate" class="alert-box compact" style="margin-top:8px">intimacyGate: --</div>
+      <div id="rtRouting" class="alert-box compact" style="margin-top:8px">routing: --</div>
+      <div id="rtEcho" class="alert-box compact" style="margin-top:8px">echo: --</div>
+      <div id="rtSuperego" class="alert-box compact" style="margin-top:8px">superego: --</div>
+      <div id="rtStateModel" class="alert-box compact" style="margin-top:8px">stateModel: --</div>
+    </section>
+  </main>
+
+  <script src="ai_cognition.js"></script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+{
+  "tests": [
+    {
+      "name": "mood_inertia_no_jump",
+      "states": [
+        {
+          "moodScore": 1.5,
+          "drive": 2.52,
+          "intent": "idle"
+        },
+        {
+          "moodScore": 3,
+          "drive": 4.33,
+          "intent": "idle"
+        },
+        {
+          "moodScore": 4.5,
+          "drive": 5.64,
+          "intent": "idle"
+        }
+      ],
+      "historyTail": [
+        {
+          "timestamp": "2026-03-01T14:37:04.584Z",
+          "source": "regression_mood",
+          "mood": "PLAYFUL",
+          "activityWindowOpen": true,
+          "activeChatCount": 0,
+          "isChatSilent": true,
+          "fromMoodScore": 1.5,
+          "toMoodScore": 3,
+          "fromDrive": 2.52,
+          "toDrive": 4.33,
+          "fromIntent": "idle",
+          "toIntent": "idle",
+          "at": "2026-03-01T14:37:04.584Z",
+          "urgeToScroll": 1.31,
+          "whyNow": "現在心情有點輕飄飄的，會想多看看有趣的東西。"
+        },
+        {
+          "timestamp": "2026-03-01T14:37:04.584Z",
+          "source": "regression_mood",
+          "mood": "PLAYFUL",
+          "activityWindowOpen": true,
+          "activeChatCount": 0,
+          "isChatSilent": true,
+          "fromMoodScore": 3,
+          "toMoodScore": 4.5,
+          "fromDrive": 4.33,
+          "toDrive": 5.64,
+          "fromIntent": "idle",
+          "toIntent": "idle",
+          "at": "2026-03-01T14:37:04.584Z",
+          "urgeToScroll": 2.11,
+          "whyNow": "現在心情有點輕飄飄的，會想多看看有趣的東西。"
+        },
+        {
+          "timestamp": "2026-03-01T14:37:04.585Z",
+          "source": "regression_non_activity",
+          "mood": "CALM",
+          "activityWindowOpen": false,
+          "activeChatCount": 0,
+          "isChatSilent": false,
+          "fromMoodScore": 4.5,
+          "toMoodScore": 3,
+          "fromDrive": 5.64,
+          "toDrive": 5.46,
+          "fromIntent": "idle",
+          "toIntent": "idle",
+          "at": "2026-03-01T14:37:04.585Z",
+          "urgeToScroll": 2.73,
+          "whyNow": "先靜靜待著看看。"
+        }
+      ],
+      "maxMoodDeltaPerTick": 1.5
+    },
+    {
+      "name": "group_initiation_low_vs_high_familiarity",
+      "lowGroup": {
+        "shouldInitiate": false,
+        "targetUserId": null,
+        "messageDraft": null,
+        "reasonCodes": [
+          "low_familiarity"
+        ]
+      },
+      "highGroup": {
+        "shouldInitiate": true,
+        "targetUserId": "99",
+        "messageDraft": "你上次提到的「系統優化」後來怎麼樣了？",
+        "reasonCodes": [
+          "last_topic",
+          "chat_silence"
+        ]
+      }
+    },
+    {
+      "name": "private_initiation_uses_last_topic",
+      "privateInit": {
+        "shouldInitiate": true,
+        "targetUserId": "100",
+        "messageDraft": "你上次提到的「考試」後來怎麼樣了？",
+        "reasonCodes": [
+          "last_topic",
+          "chat_silence"
+        ]
+      }
+    },
+    {
+      "name": "developer_affinity_delta",
+      "developer": {
+        "enabled": true,
+        "deltaMood": 2.4,
+        "deltaDrive": 1.7999999999999998,
+        "initiativeBoost": 1.35,
+        "reason": "developer_private_affinity"
+      },
+      "publicUser": {
+        "enabled": true,
+        "deltaMood": 0,
+        "deltaDrive": 0,
+        "initiativeBoost": 1
+      }
+    },
+    {
+      "name": "threads_drive_and_satiation",
+      "nonActivity": {
+        "moodScore": 3,
+        "drive": 5.46,
+        "urgeToScroll": 2.73,
+        "currentIntent": "idle",
+        "lastTickAt": 1772375824585,
+        "transition": {
+          "fromMoodScore": 4.5,
+          "toMoodScore": 3,
+          "fromDrive": 5.64,
+          "toDrive": 5.46,
+          "fromIntent": "idle",
+          "toIntent": "idle",
+          "at": "2026-03-01T14:37:04.585Z"
+        },
+        "lastWhyNow": "先靜靜待著看看。"
+      },
+      "afterSatiation": {
+        "moodScore": 3,
+        "drive": 5.46,
+        "urgeToScroll": 0,
+        "currentIntent": "idle",
+        "lastTickAt": 1772375824585,
+        "transition": {
+          "fromMoodScore": 4.5,
+          "toMoodScore": 3,
+          "fromDrive": 5.64,
+          "toDrive": 5.46,
+          "fromIntent": "idle",
+          "toIntent": "idle",
+          "at": "2026-03-01T14:37:04.585Z"
+        },
+        "lastWhyNow": "先靜靜待著看看。",
+        "lastScrollAt": 1772375824585
+      }
+    },
+    {
+      "name": "self_pause_guard",
+      "paused": true,
+      "resumeWorked": true,
+      "fixedSentence": "我的AI出問題了幫我跟開發者說一下"
+    }
+  ]
+}

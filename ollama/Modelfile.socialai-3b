@@ -1,0 +1,5 @@
+FROM qwen2.5:3b
+ADAPTER C:\Users\wu992\Desktop\socialAI\social_ai\train\socialai_persona_3b_lora_v2
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER stop "<|im_end|>"

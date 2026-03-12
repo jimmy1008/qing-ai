@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>情緒日誌 — SocialAI</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .el-grid {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .el-left { display: flex; flex-direction: column; gap: 14px; }
+    .el-right { display: flex; flex-direction: column; gap: 14px; }
+
+    /* Mood badge */
+    .mood-badge {
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 3px 14px;
+      border-radius: 20px;
+      letter-spacing: 0.04em;
+    }
+    .mood-PLAYFUL  { background: #1a3a1a; color: #4ade80; border: 1px solid #166534; }
+    .mood-CURIOUS  { background: #1e2f50; color: #60a5fa; border: 1px solid #1e3a8a; }
+    .mood-CALM     { background: #1e2a2a; color: #67e8f9; border: 1px solid #164e63; }
+    .mood-TIRED    { background: #2a1e2a; color: #c084fc; border: 1px solid #6b21a8; }
+    .mood-WITHDRAWN{ background: #2a1e1e; color: #f87171; border: 1px solid #7f1d1d; }
+
+    /* Score bar */
+    .score-bar-wrap {
+      margin-top: 10px;
+    }
+    .score-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #6b7280;
+      margin-bottom: 4px;
+    }
+    .score-bar-track {
+      height: 8px;
+      background: #1e2530;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .score-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.4s ease, background 0.4s ease;
+    }
+    .score-bar-center {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      width: 1px;
+      height: 100%;
+      background: #374151;
+    }
+
+    /* Event table */
+    .event-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .event-table th {
+      text-align: left;
+      color: #6b7280;
+      font-weight: 500;
+      padding: 5px 8px;
+      border-bottom: 1px solid #1e2530;
+    }
+    .event-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #141c26;
+      color: #c9d1d9;
+      vertical-align: top;
+    }
+    .event-table tr:last-child td { border-bottom: none; }
+    .delta-pos { color: #4ade80; }
+    .delta-neg { color: #f87171; }
+    .delta-zer { color: #6b7280; }
+
+    /* Per-user residue cards */
+    .residue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .residue-card {
+      background: #0d1520;
+      border: 1px solid #1e2530;
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .residue-key {
+      font-size: 12px;
+      color: #9aa4b2;
+      font-family: monospace;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .residue-meta {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+    }
+    .drift-bar {
+      width: 60px;
+      height: 4px;
+      background: #1e2530;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .drift-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: #3b82f6;
+    }
+
+    /* Consolidate section */
+    .consolidate-result {
+      font-size: 12px;
+      color: #9aa4b2;
+      margin-top: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .consolidate-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px solid #1e2530;
+    }
+    .consolidate-row:last-child { border-bottom: none; }
+    .cons-key { color: #c9d1d9; font-family: monospace; font-size: 11px; }
+    .cons-stats { color: #6b7280; font-size: 11px; }
+    .cons-ok { color: #4ade80; }
+  </style>
+</head>
+<body>
+  <header id="headerBar" class="topbar">
+    <div class="title-block">
+      <h1>情緒日誌</h1>
+      <div class="meta-row">
+        <span id="lastUpdated">最後更新：--</span>
+      </div>
+    </div>
+    <nav class="topbar-nav">
+      <button class="btn" type="button" onclick="location.href='/'">← 返回控制台</button>
+      <div class="nav-sep"></div>
+      <button class="btn" type="button" onclick="fetchData()">刷新</button>
+    </nav>
+  </header>
+
+  <main style="padding: 0 16px 24px;">
+    <div class="el-grid">
+
+      <!-- LEFT: current mood + score + consolidate -->
+      <div class="el-left">
+
+        <section class="panel">
+          <div class="panel-title">當前情緒狀態</div>
+          <div style="margin-top:8px;">
+            <span id="moodBadge" class="mood-badge mood-CALM">CALM</span>
+            <span id="moodReason" style="font-size:12px;color:#6b7280;margin-left:10px;">--</span>
+          </div>
+          <div class="score-bar-wrap">
+            <div class="score-bar-label">
+              <span>-10 (WITHDRAWN)</span>
+              <span id="scoreLabel">0</span>
+              <span>+10 (PLAYFUL)</span>
+            </div>
+            <div class="score-bar-track">
+              <div class="score-bar-center"></div>
+              <div id="scoreBarFill" class="score-bar-fill" style="width:50%;background:#3b82f6;"></div>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:11px;color:#6b7280;">
+            基準情緒：<span id="baseMood">--</span>
+            &nbsp;|&nbsp;偏移：<span id="drifted">--</span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">記憶壓縮</div>
+          <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
+            合併相似的 episodic 記憶條目，去除衰退過期的記憶。
+          </div>
+          <button id="consolidateBtn" class="btn" type="button" onclick="runConsolidate()">執行壓縮</button>
+          <div id="consolidateResult" class="consolidate-result" style="display:none;"></div>
+        </section>
+
+      </div>
+
+      <!-- RIGHT: event log + per-user residue -->
+      <div class="el-right">
+
+        <section class="panel">
+          <div class="panel-title">近期情緒事件（最新 20 筆）</div>
+          <div style="overflow-x:auto;margin-top:8px;">
+            <table class="event-table">
+              <thead>
+                <tr>
+                  <th>時間</th>
+                  <th>目標用戶</th>
+                  <th>事件類型</th>
+                  <th>Delta</th>
+                  <th>結果情緒</th>
+                  <th>原因</th>
+                </tr>
+              </thead>
+              <tbody id="eventTableBody">
+                <tr><td colspan="6" style="color:#6b7280;text-align:center;">載入中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">各用戶情緒殘留</div>
+          <div id="residueList" class="residue-list" style="margin-top:8px;">
+            <div style="color:#6b7280;font-size:12px;">載入中...</div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const MOOD_COLORS = {
+      PLAYFUL: '#4ade80', CURIOUS: '#60a5fa',
+      CALM: '#67e8f9', TIRED: '#c084fc', WITHDRAWN: '#f87171',
+    };
+
+    function fmtTime(iso) {
+      if (!iso) return '--';
+      const d = new Date(iso);
+      return d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function deltaClass(d) {
+      if (d > 0) return 'delta-pos';
+      if (d < 0) return 'delta-neg';
+      return 'delta-zer';
+    }
+
+    function renderMoodBadge(mood) {
+      const el = document.getElementById('moodBadge');
+      el.textContent = mood || 'CALM';
+      el.className = `mood-badge mood-${mood || 'CALM'}`;
+    }
+
+    function renderScoreBar(score) {
+      const pct = ((score + 10) / 20) * 100;
+      const fill = document.getElementById('scoreBarFill');
+      fill.style.width = pct + '%';
+      fill.style.background = MOOD_COLORS[scoreTomood(score)] || '#3b82f6';
+      document.getElementById('scoreLabel').textContent = score.toFixed(2);
+    }
+
+    function scoreTomood(s) {
+      if (s > 6) return 'PLAYFUL';
+      if (s > 2) return 'CURIOUS';
+      if (s > -2) return 'CALM';
+      if (s > -6) return 'TIRED';
+      return 'WITHDRAWN';
+    }
+
+    function renderEvents(events) {
+      const tbody = document.getElementById('eventTableBody');
+      if (!events || events.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:#6b7280;text-align:center;">尚無事件</td></tr>';
+        return;
+      }
+      tbody.innerHTML = events.map(e => {
+        const dc = deltaClass(e.delta);
+        const deltaStr = e.delta > 0 ? `+${e.delta.toFixed(2)}` : e.delta.toFixed(2);
+        return `<tr>
+          <td style="white-space:nowrap;">${fmtTime(e.timestamp)}</td>
+          <td style="font-family:monospace;font-size:11px;">${e.targetUser || '—'}</td>
+          <td>${e.type || '—'}</td>
+          <td class="${dc}">${deltaStr}</td>
+          <td><span class="mood-badge mood-${e.mood || 'CALM'}" style="font-size:10px;padding:1px 8px;">${e.mood || '—'}</span></td>
+          <td style="color:#6b7280;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${e.reason || ''}">${e.reason || '—'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderResidue(list) {
+      const el = document.getElementById('residueList');
+      if (!list || list.length === 0) {
+        el.innerHTML = '<div style="color:#6b7280;font-size:12px;">尚無記錄</div>';
+        return;
+      }
+      el.innerHTML = list.map(u => {
+        const driftPct = Math.min(100, (u.moodDrift / 2) * 100);
+        return `<div class="residue-card">
+          <div>
+            <div class="residue-key" title="${u.userKey}">${u.userKey}</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:3px;">
+              ${u.eventCount} 個事件 · 最強：${u.strongestType} (${u.strongestIntensity})
+            </div>
+          </div>
+          <div class="residue-meta">
+            <span class="mood-badge mood-${u.baselineMood}" style="font-size:10px;padding:1px 8px;">${u.baselineMood}</span>
+            <div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:2px;">drift ${u.moodDrift}</div>
+              <div class="drift-bar"><div class="drift-fill" style="width:${driftPct}%"></div></div>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    async function fetchData() {
+      try {
+        const res = await fetch('/api/emotion-log');
+        const data = await res.json();
+
+        renderMoodBadge(data.moodState?.mood);
+        renderScoreBar(data.moodState?.moodScore || 0);
+        document.getElementById('moodReason').textContent = data.moodState?.reason || '';
+        document.getElementById('baseMood').textContent = data.moodState?.baseMood || '--';
+        document.getElementById('drifted').textContent = data.moodState?.drifted ? '是' : '否';
+        document.getElementById('lastUpdated').textContent = '最後更新：' + new Date().toLocaleTimeString('zh-TW');
+
+        renderEvents(data.recentEvents);
+        renderResidue(data.perUserResidue);
+      } catch (e) {
+        console.error('emotion-log fetch failed', e);
+      }
+    }
+
+    async function runConsolidate() {
+      const btn = document.getElementById('consolidateBtn');
+      const result = document.getElementById('consolidateResult');
+      btn.disabled = true;
+      btn.textContent = '執行中...';
+      result.style.display = 'none';
+      try {
+        const res = await fetch('/api/memory/consolidate', { method: 'POST' });
+        const data = await res.json();
+        if (!data.results || data.results.length === 0) {
+          result.innerHTML = '<div style="color:#6b7280;">無 episodic 記憶檔案。</div>';
+        } else {
+          result.innerHTML = data.results.map(r => {
+            if (r.error) return `<div class="consolidate-row"><span class="cons-key">${r.userKey}</span><span style="color:#f87171;">${r.error}</span></div>`;
+            const saved = r.before - r.after;
+            const status = saved > 0 ? `<span class="cons-ok">-${saved} 條</span>` : '<span style="color:#6b7280;">無變化</span>';
+            return `<div class="consolidate-row">
+              <span class="cons-key">${r.userKey}</span>
+              <span class="cons-stats">${r.before} → ${r.after} &nbsp;合併:${r.merged} &nbsp;${status}</span>
+            </div>`;
+          }).join('');
+        }
+        result.style.display = 'block';
+      } catch (e) {
+        result.innerHTML = `<div style="color:#f87171;">Error: ${e.message}</div>`;
+        result.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '執行壓縮';
+      }
+    }
+
+    fetchData();
+    setInterval(fetchData, 5000);
+  </script>
+</body>
+</html>

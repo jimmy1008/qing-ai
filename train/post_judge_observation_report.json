@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-03-07T01:10:43.617Z",
+  "sourceFiles": {
+    "connectorLogPath": "C:\\Users\\wu992\\Desktop\\socialAI\\social_ai\\logs\\connector.log",
+    "stateHistoryPath": "C:\\Users\\wu992\\Desktop\\socialAI\\social_ai\\telemetry\\ai_state_history.jsonl"
+  },
+  "totalResponses": 514,
+  "judgeTriggeredCount": 260,
+  "judgeTriggeredRatio": 0.5058,
+  "averageRawDelta": 0,
+  "maxRawDelta": 0,
+  "averageMoodBeforeTick": 7.69,
+  "averageMoodAfterTick": 6.95,
+  "averageEmotionLevel": 6.95,
+  "stanceSwitchCount": 6,
+  "averageStancePersistence": 10.67,
+  "maxEmotionPeak": 12.4,
+  "samples": [
+    10.5,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12
+  ],
+  "deltas": [
+    1.5,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "decays": 0,
+  "rises": 1,
+  "emotionDecayPattern": "mixed_or_rising"
+}

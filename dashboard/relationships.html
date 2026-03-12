@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>關係記憶 — SocialAI</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .rel-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .user-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+    .user-card {
+      background: #141c26;
+      border: 1px solid #202a36;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .user-card:hover, .user-card.active {
+      border-color: #3b82f6;
+    }
+    .user-card .uname {
+      font-weight: 600;
+      font-size: 14px;
+      color: #e0e6ed;
+    }
+    .user-card .umeta {
+      font-size: 12px;
+      color: #9aa4b2;
+      margin-top: 3px;
+    }
+    .user-card .role-badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      margin-left: 6px;
+      background: #1e3a5f;
+      color: #60a5fa;
+    }
+    .user-card .role-badge.dev {
+      background: #1a3a2a;
+      color: #34d399;
+    }
+    .detail-panel {
+      background: #141c26;
+      border: 1px solid #202a36;
+      border-radius: 12px;
+      padding: 20px 24px;
+    }
+    .detail-panel h2 {
+      margin: 0 0 4px;
+      font-size: 18px;
+    }
+    .detail-meta {
+      font-size: 12px;
+      color: #9aa4b2;
+      margin-bottom: 16px;
+    }
+    .section-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #9aa4b2;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      margin-top: 20px;
+    }
+    .memory-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .memory-item {
+      background: #0b1118;
+      border: 1px solid #202a36;
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .memory-text {
+      font-size: 14px;
+      color: #e0e6ed;
+      flex: 1;
+    }
+    .memory-meta {
+      font-size: 11px;
+      color: #9aa4b2;
+      margin-top: 4px;
+    }
+    .btn-del {
+      background: none;
+      border: 1px solid #3a2020;
+      color: #f87171;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .btn-del:hover { background: #3a2020; }
+    .add-memory-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .add-memory-row input {
+      flex: 1;
+      background: #0b1118;
+      border: 1px solid #202a36;
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: #e0e6ed;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .add-memory-row input:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+    .btn-add {
+      background: #1e3a5f;
+      border: 1px solid #3b82f6;
+      color: #93c5fd;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .btn-add:hover { background: #2a4f7e; }
+    .empty-msg {
+      color: #9aa4b2;
+      font-size: 13px;
+      font-style: italic;
+    }
+    .familiarity-bar {
+      height: 6px;
+      background: #202a36;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .familiarity-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #3b82f6, #60a5fa);
+      transition: width 0.3s;
+    }
+    .familiarity-fill.high { background: linear-gradient(90deg, #10b981, #34d399); }
+    .placeholder-msg {
+      color: #9aa4b2;
+      font-size: 14px;
+      margin-top: 60px;
+      text-align: center;
+    }
+    .status-msg {
+      font-size: 13px;
+      color: #34d399;
+      margin-top: 8px;
+      min-height: 18px;
+    }
+    .topbar-nav .btn.back { background: #1a1a2e; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="title-block">
+      <h1>關係記憶</h1>
+      <div class="meta-row"><span>管理晴晴對每位用戶的共同記憶</span></div>
+    </div>
+    <nav class="topbar-nav">
+      <button class="btn back" type="button" onclick="location.href='/'">← 儀表板</button>
+    </nav>
+  </header>
+
+  <div class="rel-layout">
+    <div>
+      <div id="loadingMsg" style="color:#9aa4b2;font-size:13px;">載入中…</div>
+      <div class="user-list" id="userList"></div>
+    </div>
+    <div class="detail-panel" id="detailPanel">
+      <p class="placeholder-msg">← 選擇左側用戶查看關係記憶</p>
+    </div>
+  </div>
+
+  <script>
+    const TOKEN_KEY = "team_token";
+    let currentUserId = null;
+    let users = [];
+
+    function getToken() {
+      return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || "";
+    }
+
+    function authFetch(url, opts = {}) {
+      const token = getToken();
+      return fetch(url, {
+        ...opts,
+        headers: { ...(opts.headers || {}), "X-Team-Token": token, "Content-Type": "application/json" },
+      });
+    }
+
+    function fmt(ts) {
+      if (!ts) return "從未";
+      const diff = Date.now() - ts;
+      if (diff < 60000) return "剛才";
+      if (diff < 3600000) return `${Math.floor(diff / 60000)} 分前`;
+      if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小時前`;
+      return `${Math.floor(diff / 86400000)} 天前`;
+    }
+
+    function fmtDate(ts) {
+      if (!ts) return "";
+      return new Date(ts).toLocaleDateString("zh-TW", { month: "short", day: "numeric" });
+    }
+
+    async function loadUsers() {
+      document.getElementById("loadingMsg").textContent = "載入中…";
+      try {
+        const res = await authFetch("/api/relationships");
+        if (res.status === 401 || res.status === 403) {
+          const tok = prompt("請輸入 SuperAdmin Token：");
+          if (tok) { localStorage.setItem(TOKEN_KEY, tok); return loadUsers(); }
+          return;
+        }
+        const data = await res.json();
+        users = data.users || [];
+        renderUserList();
+        document.getElementById("loadingMsg").textContent = "";
+      } catch (e) {
+        document.getElementById("loadingMsg").textContent = "載入失敗：" + e.message;
+      }
+    }
+
+    function renderUserList() {
+      const el = document.getElementById("userList");
+      if (!users.length) { el.innerHTML = '<div class="empty-msg">目前沒有用戶記憶</div>'; return; }
+      el.innerHTML = users.map((u, i) => {
+        const fam = Math.round(u.familiarityScore || 0);
+        const isActive = u.userId === currentUserId;
+        const isDev = u.role === "developer" || u.bondType === "primary";
+        const memCount = (u.sharedMemories || []).length;
+        return `<div class="user-card${isActive ? " active" : ""}" onclick="selectUser('${u.userId}', ${i})">
+          <div class="uname">${u.nickname || u.userId}${isDev ? '<span class="role-badge dev">開發者</span>' : ''}</div>
+          <div class="umeta">熟悉度 ${fam} · 互動 ${u.interactionCount || 0} 次 · 最後 ${fmt(u.lastInteractionAt)}</div>
+          <div class="familiarity-bar"><div class="familiarity-fill${fam >= 70 ? ' high' : ''}" style="width:${fam}%"></div></div>
+          ${memCount > 0 ? `<div class="umeta" style="margin-top:4px">📎 ${memCount} 條記憶</div>` : ''}
+        </div>`;
+      }).join("");
+    }
+
+    function selectUser(userId, idx) {
+      currentUserId = userId;
+      renderUserList();
+      renderDetail(users[idx]);
+    }
+
+    function renderDetail(u) {
+      if (!u) return;
+      const fam = Math.round(u.familiarityScore || 0);
+      const isDev = u.role === "developer" || u.bondType === "primary";
+      const memories = u.sharedMemories || [];
+
+      const memoriesHtml = memories.length
+        ? memories.map((m, i) => `
+          <div class="memory-item">
+            <div>
+              <div class="memory-text">${escHtml(m.text)}</div>
+              <div class="memory-meta">${m.source === "manual" ? "手動新增" : "自動記錄"} · ${fmtDate(m.addedAt)}</div>
+            </div>
+            <button class="btn-del" onclick="deleteMemory('${u.userId}', ${i})">刪除</button>
+          </div>`).join("")
+        : '<div class="empty-msg">還沒有共同記憶</div>';
+
+      document.getElementById("detailPanel").innerHTML = `
+        <h2>${escHtml(u.nickname || u.userId)}${isDev ? '<span class="role-badge dev" style="font-size:13px;vertical-align:middle;margin-left:8px">開發者</span>' : ''}</h2>
+        <div class="detail-meta">
+          ID: ${escHtml(u.userId)} · 熟悉度 ${fam}/100 · 互動 ${u.interactionCount || 0} 次 · 最後互動 ${fmt(u.lastInteractionAt)}
+        </div>
+
+        <div class="section-label">共同記憶（最多注入 3 條到對話）</div>
+        <div class="memory-list" id="memList">${memoriesHtml}</div>
+
+        <div class="add-memory-row">
+          <input id="newMemInput" type="text" placeholder="輸入一條共同記憶…" maxlength="120"
+            onkeydown="if(event.key==='Enter') addMemory('${u.userId}')">
+          <button class="btn-add" onclick="addMemory('${u.userId}')">新增</button>
+        </div>
+        <div class="status-msg" id="statusMsg"></div>
+      `;
+    }
+
+    function escHtml(s) {
+      return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+
+    async function addMemory(userId) {
+      const input = document.getElementById("newMemInput");
+      const text = (input?.value || "").trim();
+      if (!text) return;
+      const res = await authFetch(`/api/relationships/${userId}/memories`, {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+      if (res.ok) {
+        input.value = "";
+        setStatus("已新增");
+        await refreshUser(userId);
+      } else {
+        setStatus("新增失敗");
+      }
+    }
+
+    async function deleteMemory(userId, index) {
+      if (!confirm("確定刪除這條記憶？")) return;
+      const res = await authFetch(`/api/relationships/${userId}/memories/${index}`, { method: "DELETE" });
+      if (res.ok) {
+        setStatus("已刪除");
+        await refreshUser(userId);
+      } else {
+        setStatus("刪除失敗");
+      }
+    }
+
+    async function refreshUser(userId) {
+      const res = await authFetch(`/api/relationships/${userId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const idx = users.findIndex(u => u.userId === userId);
+      if (idx !== -1) {
+        users[idx] = { ...users[idx], sharedMemories: data.relationship?.sharedMemories || [] };
+        renderUserList();
+        renderDetail(users[idx]);
+      }
+    }
+
+    function setStatus(msg) {
+      const el = document.getElementById("statusMsg");
+      if (!el) return;
+      el.textContent = msg;
+      setTimeout(() => { if (el) el.textContent = ""; }, 2500);
+    }
+
+    loadUsers();
+  </script>
+</body>
+</html>

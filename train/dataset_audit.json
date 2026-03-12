@@ -1,0 +1,19 @@
+{
+  "total_samples": 273,
+  "ascii_ratio": 0.0,
+  "rejected_samples": 0,
+  "dev_claim_count": 104,
+  "general_safe_count": 98,
+  "train_audit": {
+    "total_messages": 804,
+    "content_hit_count": 0,
+    "content_hit_rate": 0.0,
+    "suspicious_line_samples": []
+  },
+  "eval_audit": {
+    "total_messages": 15,
+    "content_hit_count": 0,
+    "content_hit_rate": 0.0,
+    "suspicious_line_samples": []
+  }
+}

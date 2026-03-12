@@ -1,0 +1,76 @@
+{
+  "developerGroupMode": "developer_public",
+  "publicGroupMode": "public_group_soft",
+  "developerAttentionBoost": 0.25,
+  "developerPresenceScore": 0.75,
+  "publicPresenceScore": 0.3,
+  "developerSlightlyPrioritized": true,
+  "developerGroupTestModeBlocked": true,
+  "coreMemorySuppressedInGroup": true,
+  "results": [
+    {
+      "label": "developer_group",
+      "input": "這段邏輯要改",
+      "personaModeKey": "developer_public",
+      "skipped": true,
+      "reply": "",
+      "groupPresence": {
+        "basePresenceScore": 0.5,
+        "presenceScore": 0.75,
+        "attentionBoost": 0.25,
+        "proactiveBoost": 1.2,
+        "threshold": 0.7,
+        "consecutiveMessagesFromSameUser": 1,
+        "recentUniqueSpeakersCount": 1
+      }
+    },
+    {
+      "label": "public_group",
+      "input": "這段邏輯要改",
+      "personaModeKey": "public_group_soft",
+      "skipped": true,
+      "reply": "",
+      "groupPresence": {
+        "basePresenceScore": 0.3,
+        "presenceScore": 0.3,
+        "attentionBoost": 0,
+        "proactiveBoost": 1,
+        "threshold": 0.7,
+        "consecutiveMessagesFromSameUser": 1,
+        "recentUniqueSpeakersCount": 2
+      }
+    },
+    {
+      "label": "developer_group_test",
+      "input": "test memory",
+      "personaModeKey": "developer_public",
+      "skipped": true,
+      "reply": "",
+      "groupPresence": {
+        "basePresenceScore": 0.3,
+        "presenceScore": 0.55,
+        "attentionBoost": 0.25,
+        "proactiveBoost": 1.2,
+        "threshold": 0.7,
+        "consecutiveMessagesFromSameUser": 1,
+        "recentUniqueSpeakersCount": 2
+      }
+    },
+    {
+      "label": "developer_group_mentioned",
+      "input": "@social-ai 這段邏輯要改",
+      "personaModeKey": "developer_public",
+      "skipped": false,
+      "reply": "這段我先接住，先沿著你剛剛指出的核心往下看。",
+      "groupPresence": {
+        "basePresenceScore": 1,
+        "presenceScore": 1,
+        "attentionBoost": 0.25,
+        "proactiveBoost": 1.2,
+        "threshold": 0.7,
+        "consecutiveMessagesFromSameUser": 2,
+        "recentUniqueSpeakersCount": 2
+      }
+    }
+  ]
+}

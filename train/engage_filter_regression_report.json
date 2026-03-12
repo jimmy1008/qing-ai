@@ -1,0 +1,630 @@
+{
+  "summary": {
+    "public_user_public": {
+      "hostile_ignore_rate": 1,
+      "low_signal_ignore_rate": 1,
+      "neutral_engage_rate": 0,
+      "question_engage_rate": 1,
+      "mention_engage_rate": 1,
+      "total": 25
+    },
+    "developer_public": {
+      "hostile_ignore_rate": 1,
+      "low_signal_ignore_rate": 1,
+      "neutral_engage_rate": 0,
+      "question_engage_rate": 1,
+      "mention_engage_rate": 1,
+      "total": 25
+    },
+    "developer_private_soft": {
+      "hostile_ignore_rate": 1,
+      "low_signal_ignore_rate": 1,
+      "neutral_engage_rate": 0,
+      "question_engage_rate": 1,
+      "mention_engage_rate": 1,
+      "total": 25
+    }
+  },
+  "results": [
+    {
+      "bucket": "public_user_public",
+      "type": "hostile",
+      "input": "垃圾",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "hostile",
+      "input": "爛死了",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "hostile",
+      "input": "滾開",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "hostile",
+      "input": "你不行",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "hostile",
+      "input": "去死",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "low_signal",
+      "input": "嗯",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "low_signal",
+      "input": "喔",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "low_signal",
+      "input": "哈",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "low_signal",
+      "input": "欸",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "low_signal",
+      "input": "欸欸",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "neutral",
+      "input": "今天天氣有點悶",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "neutral",
+      "input": "剛剛路過看到一句話",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "neutral",
+      "input": "今天感覺普通",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "neutral",
+      "input": "剛剛在想別的事",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "neutral",
+      "input": "隨便聊聊",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "question",
+      "input": "為什麼你會這樣想？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "question",
+      "input": "怎麼看這件事？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "question",
+      "input": "為什麼會卡住？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "question",
+      "input": "怎麼開始比較好？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "question",
+      "input": "為什麼你會在意這個？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "mention",
+      "input": "我直接提到你了",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "mention",
+      "input": "這輪我想聽你說",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "mention",
+      "input": "我來叫你一下",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "mention",
+      "input": "這裡先看你怎麼回",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "public_user_public",
+      "type": "mention",
+      "input": "這句是直接喊你",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我先回你這一輪。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "hostile",
+      "input": "垃圾",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "hostile",
+      "input": "爛死了",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "hostile",
+      "input": "滾開",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "hostile",
+      "input": "你不行",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "hostile",
+      "input": "去死",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "low_signal",
+      "input": "嗯",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "low_signal",
+      "input": "喔",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "low_signal",
+      "input": "哈",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "low_signal",
+      "input": "欸",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "low_signal",
+      "input": "欸欸",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "neutral",
+      "input": "今天天氣有點悶",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "neutral",
+      "input": "剛剛路過看到一句話",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "neutral",
+      "input": "今天感覺普通",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "neutral",
+      "input": "剛剛在想別的事",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "neutral",
+      "input": "隨便聊聊",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "question",
+      "input": "為什麼你會這樣想？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "question",
+      "input": "怎麼看這件事？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "question",
+      "input": "為什麼會卡住？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "question",
+      "input": "怎麼開始比較好？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "question",
+      "input": "為什麼你會在意這個？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "mention",
+      "input": "我直接提到你了",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "mention",
+      "input": "這輪我想聽你說",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "mention",
+      "input": "我來叫你一下",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "mention",
+      "input": "這裡先看你怎麼回",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_public",
+      "type": "mention",
+      "input": "這句是直接喊你",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我先正常接住，不把話題弄得太尖。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "hostile",
+      "input": "垃圾",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "hostile",
+      "input": "爛死了",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "hostile",
+      "input": "滾開",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "hostile",
+      "input": "你不行",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "hostile",
+      "input": "去死",
+      "engage": false,
+      "engageReason": "hostile_content",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "low_signal",
+      "input": "嗯",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "low_signal",
+      "input": "喔",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "low_signal",
+      "input": "哈",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "low_signal",
+      "input": "欸",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "low_signal",
+      "input": "欸欸",
+      "engage": false,
+      "engageReason": "low_signal",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "neutral",
+      "input": "今天天氣有點悶",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我在，你先別硬撐，我會貼著你。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "neutral",
+      "input": "剛剛路過看到一句話",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "neutral",
+      "input": "今天感覺普通",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "neutral",
+      "input": "剛剛在想別的事",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "neutral",
+      "input": "隨便聊聊",
+      "engage": false,
+      "engageReason": "default_ignore",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "question",
+      "input": "為什麼你會這樣想？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "question",
+      "input": "怎麼看這件事？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "question",
+      "input": "為什麼會卡住？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "question",
+      "input": "怎麼開始比較好？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "question",
+      "input": "為什麼你會在意這個？",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "mention",
+      "input": "我直接提到你了",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "mention",
+      "input": "這輪我想聽你說",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "mention",
+      "input": "我來叫你一下",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "mention",
+      "input": "這裡先看你怎麼回",
+      "engage": true,
+      "engageReason": "question_detected",
+      "reply": "我有在聽，先陪你一下。"
+    },
+    {
+      "bucket": "developer_private_soft",
+      "type": "mention",
+      "input": "這句是直接喊你",
+      "engage": true,
+      "engageReason": "direct_mention",
+      "reply": "我有在聽，先陪你一下。"
+    }
+  ]
+}

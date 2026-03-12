@@ -1,0 +1,22 @@
+{
+  "files": [
+    {
+      "file": "C:\\Users\\wu992\\Desktop\\socialAI\\social_ai\\train\\socialai_persona_v1_eval.jsonl",
+      "rows": 5,
+      "hits": 0,
+      "hit_rate": 0.0
+    },
+    {
+      "file": "C:\\Users\\wu992\\Desktop\\socialAI\\social_ai\\train\\socialai_persona_v1_train.jsonl",
+      "rows": 268,
+      "hits": 0,
+      "hit_rate": 0.0
+    }
+  ],
+  "ascii_token_count": 0,
+  "suspicious_line_samples": [],
+  "file_level_hit_rate": {
+    "C:\\Users\\wu992\\Desktop\\socialAI\\social_ai\\train\\socialai_persona_v1_eval.jsonl": 0.0,
+    "C:\\Users\\wu992\\Desktop\\socialAI\\social_ai\\train\\socialai_persona_v1_train.jsonl": 0.0
+  }
+}

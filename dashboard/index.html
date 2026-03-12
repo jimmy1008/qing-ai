@@ -1,0 +1,229 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SocialAI 控制台</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <header id="headerBar" class="topbar">
+    <div class="title-block">
+      <h1>SocialAI 控制台</h1>
+      <div class="meta-row">
+        <span id="systemTime">系統時間：--</span>
+        <span id="uptime">運行時間：--</span>
+        <span id="lastUpdated">最後更新：--</span>
+      </div>
+    </div>
+    <nav class="topbar-nav">
+      <button id="tabDashboard" class="btn active" type="button" onclick="switchTab('dashboard')">總覽</button>
+      <button id="tabAnalytics" class="btn" type="button" onclick="switchTab('analytics')">分析</button>
+      <div class="nav-sep"></div>
+      <button class="btn" type="button" onclick="location.href='/threads-moderation'">Threads 審核</button>
+      <button class="btn" type="button" onclick="location.href='/ai-cognition'">AI 認知</button>
+      <button class="btn" type="button" onclick="location.href='/lora-dashboard.html'">LoRA 訓練</button>
+      <button class="btn" type="button" onclick="location.href='/relationships'">關係記憶</button>
+      <button class="btn" type="button" onclick="location.href='/emotion-log'">情緒日誌</button>
+      <button class="btn" type="button" onclick="location.href='/voice-chat'">語音對話</button>
+      <div class="nav-sep"></div>
+      <button class="btn" type="button" onclick="manualRefresh()">刷新</button>
+      <select id="refreshRate" aria-label="更新頻率">
+        <option value="3000" selected>3 秒</option>
+        <option value="5000">5 秒</option>
+        <option value="10000">10 秒</option>
+      </select>
+    </nav>
+  </header>
+
+  <main>
+    <section id="dashboardView" class="view active">
+      <div class="dashboard-grid">
+        <section class="panel compact-panel">
+          <div class="panel-title">系統核心狀態</div>
+          <div class="summary-line">
+            <span id="connectorStatus" class="summary-chip success">● 在線</span>
+            <span id="incomingRate" class="summary-chip">0 次/分</span>
+            <span id="errorRate" class="summary-chip">錯誤：0</span>
+            <span id="healthScore" class="summary-chip">健康：100</span>
+          </div>
+          <div id="alertsBox" class="alert-box compact">目前沒有警示。</div>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-title">人格穩定 + 互動狀態</div>
+          <div class="card-grid compact-grid two-col">
+            <div class="card compact-card">
+              <div class="card-title">人格健康</div>
+              <div id="personaHealthCompact" class="value compact-text">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">互動 / 忽略</div>
+              <div id="engageCompact" class="value compact-text">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">行動分級</div>
+              <div id="riskCompact" class="value compact-text">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">回歸狀態</div>
+              <div id="regressionCompact" class="value compact-text">--</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-title">行為監控</div>
+          <div class="card-grid compact-grid">
+            <div class="card compact-card">
+              <div class="card-title">目前模式</div>
+              <div id="currentPersonaMode" class="value small">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">模式分佈</div>
+              <div id="personaModeDist" class="value small">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">最高互動原因</div>
+              <div id="topEngageReason" class="value small">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">最高忽略原因</div>
+              <div id="topIgnoreReason" class="value small">--</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-title">風險監控</div>
+          <div class="card-grid compact-grid">
+            <div class="card compact-card">
+              <div class="card-title">視窗 / 開發者宣告</div>
+              <div id="rollingCompact" class="value compact-text">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">私聊信任邊界</div>
+              <div id="privateTrustCheck" class="value small">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">攻擊內容忽略率</div>
+              <div id="hostileIgnoreRate" class="value">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">低訊號忽略率</div>
+              <div id="lowSignalIgnoreRate" class="value">--</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel compact-panel">
+          <div class="panel-title">記憶狀態</div>
+          <div class="card-grid compact-grid">
+            <div class="card compact-card">
+              <div class="card-title">活躍 Key</div>
+              <div id="memoryActiveKeys" class="value">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">短期平均</div>
+              <div id="memoryShortAvg" class="value">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">長期事實</div>
+              <div id="memoryFacts" class="value">--</div>
+            </div>
+            <div class="card compact-card">
+              <div class="card-title">最大 Key</div>
+              <div id="memoryLargestKey" class="value small">--</div>
+            </div>
+          </div>
+        </section>
+
+      <section class="panel compact-panel" id="threadsActivityPanel">
+        <div class="panel-title">Threads 行動狀態</div>
+        <div class="card-grid compact-grid">
+          <div class="card compact-card">
+            <div class="card-title">上次滑文</div>
+            <div id="threadsLastSession" class="value small">--</div>
+          </div>
+          <div class="card compact-card">
+            <div class="card-title">上次按讚</div>
+            <div id="threadsLastLike" class="value small">--</div>
+          </div>
+          <div class="card compact-card">
+            <div class="card-title">上次留言提議</div>
+            <div id="threadsLastComment" class="value small">--</div>
+          </div>
+          <div class="card compact-card">
+            <div class="card-title">待審核 / 已通過</div>
+            <div id="threadsQueueStatus" class="value small">--</div>
+          </div>
+          <div class="card compact-card">
+            <div class="card-title">常互動作者</div>
+            <div id="threadsTopAuthors" class="value small">--</div>
+          </div>
+        </div>
+      </section>
+      </div>
+
+      <section class="panel logs-panel">
+        <div class="log-toolbar">
+          <div class="panel-title">日誌監控</div>
+          <div class="log-filters">
+            <button id="filterAll" class="btn active" type="button" onclick="setLogFilter('all')">全部</button>
+            <button id="filterPrivate" class="btn" type="button" onclick="setLogFilter('private')">私聊</button>
+            <button id="filterGroup" class="btn" type="button" onclick="setLogFilter('group')">群組</button>
+          </div>
+          <div class="log-controls">
+            <button class="btn" type="button" onclick="copyLog()">複製</button>
+            <button class="btn" type="button" onclick="clearLog()">清除</button>
+            <button class="btn" type="button" id="autoScrollButton" onclick="toggleAutoScroll()">自動滾動：開</button>
+          </div>
+        </div>
+        <div class="log-card">
+          <div class="log-title">統一日誌流</div>
+          <div id="logContainer" class="log-box"></div>
+        </div>
+      </section>
+    </section>
+
+    <section id="analyticsView" class="view">
+      <div class="analytics-grid">
+        <section class="panel">
+          <div class="panel-title">穩定趨勢</div>
+          <div class="chart-wrap analytics-chart-wrap">
+            <canvas id="stabilityChart"></canvas>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">詳細監控</div>
+          <div class="card-grid compact-grid">
+            <div class="card compact-card"><div class="card-title">Reflex 觸發率</div><div id="reflexRate" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">重試率</div><div id="retryRate" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">異常殘留</div><div id="artifactRate" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">第二句漂移</div><div id="secondDrift" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">Reflex 失敗率</div><div id="reflexFail" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">主題持續率</div><div id="topicPersistence" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">平均反問比例</div><div id="avgQuestionRatio" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">連續問句計數</div><div id="consecutiveQuestionCount" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">模式分佈</div><div id="modeDistribution" class="value small">--</div></div>
+            <div class="card compact-card"><div class="card-title">視窗大小</div><div id="windowSize" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">開發者宣告出現率</div><div id="devClaimObserved" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">Reflex 路徑</div><div id="reflexPathDist" class="value small">--</div></div>
+            <div class="card compact-card"><div class="card-title">待人工審核</div><div id="pendingReview" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">最近行動數</div><div id="actionTotal" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">互動率</div><div id="engageRate" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">忽略率</div><div id="ignoreRate" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">公開欺騙率</div><div id="spoofAttemptRate" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">開發者私聊問句率</div><div id="devPrivateQuestionRate" class="value">--</div></div>
+            <div class="card compact-card"><div class="card-title">L0/L1/L2/L3</div><div id="riskBreakdown" class="value small">--</div></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
