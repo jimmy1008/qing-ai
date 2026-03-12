@@ -24,8 +24,8 @@ train/inference_results.jsonl
 train/review_a_state.json
 train/review_b_state.json
 
-# ── 執行期狀態 ──
-memory/
+# ── 執行期狀態（只排除根目錄 memory/，保留 ai/memory/ 模組）──
+/memory/
 metrics/
 train/__pycache__/
 __pycache__/

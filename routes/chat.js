@@ -2,6 +2,8 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const { buildContext, generateAIReply } = require("../ai/pipeline");
+const { processEvent: orchestratorV2 }  = require("../ai/orchestrator");
+const { getStats: getWMStats }          = require("../ai/memory/working_memory");
 const { getCurrentMood, getRecentMoodEvents } = require("../ai/mood_engine");
 const { consolidateEpisodes } = require("../ai/episodic_store");
 
@@ -27,6 +29,36 @@ module.exports = function createChatRouter({ ollamaClient }) {
       res.json({ reply: result.reply, skipped: Boolean(result.skipped), telemetry: result.telemetry });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
+
+  // ── Orchestrator v2 test endpoint ──────────────────────────────────────────
+  // POST /api/chat/v2  { message, userId, username, isPrivate, channel, role }
+  // Returns: { reply, meta }  — meta includes intent, judge_pass, judge_issues, etc.
+  router.post("/api/chat/v2", async (req, res) => {
+    const userInput = req.body?.message || req.body?.text;
+    if (!userInput || typeof userInput !== "string") {
+      return res.status(400).json({ error: "message is required" });
+    }
+    try {
+      const event = {
+        type:      req.body?.eventType || "message",
+        content:   userInput,
+        text:      userInput,
+        userId:    req.body?.user_id || req.body?.userId || null,
+        username:  req.body?.username || null,
+        connector: req.body?.connector || "api",
+        isPrivate: Boolean(req.body?.isPrivate),
+        channel:   req.body?.channel || (req.body?.isPrivate ? "private" : "group"),
+        role:      req.body?.role || "public_user",
+      };
+      const result = await orchestratorV2(event);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message, stack: process.env.NODE_ENV !== "production" ? err.stack : undefined });
+    }
+  });
+
+  // Working memory stats (for debugging)
+  router.get("/api/chat/v2/stats", (_req, res) => res.json(getWMStats()));
 
   router.get("/api/emotion-log", (_req, res) => {
     const moodState = getCurrentMood("Asia/Taipei");
