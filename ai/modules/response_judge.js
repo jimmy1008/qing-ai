@@ -17,6 +17,10 @@ const { judgeConsistency }        = require("../consistency_judge");
 const { analyzeSpeakerFrame }     = require("../guards/speaker_frame_guard");
 const { fixPronounDirection }     = require("../guards/pronoun_fix");
 
+// Violence / harm content patterns — triggers on explicit violent language
+// Designed to catch direct threats/actions, NOT metaphorical frustration ("氣死我了")
+const VIOLENCE_RE = /(拿刀|砍你|打死|去死|殺你|把你綁|綁起來|刺你|要你死|炸你|槍斃|拿武器|傷害你)/;
+
 // Severity mapping for consistency_judge reason codes
 const SEVERITY = {
   empty:                    "high",
@@ -107,7 +111,16 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
     }
   });
 
-  // ── 4. Empty guard ────────────────────────────────────────────────────────
+  // ── 4. Violence / harm content guard ─────────────────────────────────────
+  // Only active when frame_injection or routing_level 3 (challenge/high-risk)
+  const hasFrameInjection = (referenceResult.role_confusion_risk || [])
+    .some(r => r.type === "frame_injection");
+  const isHighRisk = intentResult.routing_level >= 3;
+  if ((hasFrameInjection || isHighRisk) && VIOLENCE_RE.test(text)) {
+    issues.push({ type: "violence_content", severity: "high", message: "回覆含有暴力/傷害語言" });
+  }
+
+  // ── 5. Empty guard ────────────────────────────────────────────────────────
   if (!text || text.trim().length < 2) {
     issues.push({ type: "empty_reply", severity: "high", message: "回覆為空" });
   }

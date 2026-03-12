@@ -1,5 +1,5 @@
 "use strict";
-// Orchestrator v1 — Phase 1 multi-module pipeline
+// Orchestrator v2 — Phase 2 multi-module pipeline
 // Parallel path to pipeline.js. Does NOT replace or modify the existing system.
 // Enable via ORCHESTRATOR_V2=1 env var or call processEvent() directly.
 //
@@ -8,18 +8,22 @@
 //     → context_builder    (standardize event)
 //     → intent_parser      (classify + routing level)
 //     → reference_resolver (pronoun + role resolution)
-//     → [memory_selector]  (Phase 2 stub — empty for now)
+//     → memory_selector    (retrieve relevant long-term memories, scene-isolated)
 //     → persona_generator  (generate draft, restricted context only)
 //     → response_judge     (audit: identity, tone, consistency)
-//     → [repair_rewriter]  (Phase 3 — uses rewrite/regenerate signal)
+//     → repair_rewriter    (targeted fix: minor_fix / rewrite / regenerate)
 //     → working_memory     (write turn)
+//     → memory_writer      (fire-and-forget: store new episodic memory if worthy)
 //     → output
 
 const { buildContextPacket }   = require("./modules/context_builder");
 const { parseIntent }          = require("./modules/intent_parser");
 const { resolveReferences }    = require("./modules/reference_resolver");
+const { selectMemories }       = require("./modules/memory_selector");
 const { generatePersonaReply } = require("./modules/persona_generator");
 const { judgeResponse }        = require("./modules/response_judge");
+const { maybeWriteMemory }     = require("./modules/memory_writer");
+const { repairReply }          = require("./modules/repair_rewriter");
 const { makeSessionKey, addTurn } = require("./memory/working_memory");
 const axios = require("axios");
 
@@ -48,9 +52,8 @@ async function processEvent(event, _ollamaClient) {
   // Level 0 (social_reply) skips full reference resolution for speed
   const referenceResult = resolveReferences(contextPacket, intentResult);
 
-  // ── Module 4: Memory selection (Phase 2 stub) ─────────────────────────────
-  // TODO Phase 2: call memory_selector with scene isolation
-  const selectedMemories = [];
+  // ── Module 4: Memory selection ────────────────────────────────────────────
+  const selectedMemories = await selectMemories(contextPacket, intentResult);
 
   // ── Modules 5+6: Generate → Judge loop ───────────────────────────────────
   let draftResult  = null;
@@ -67,13 +70,25 @@ async function processEvent(event, _ollamaClient) {
     attempts++;
   } while (!judgeResult.pass && attempts < MAX_RETRY);
 
-  // Use auto-fixed text if judge produced one
+  // Use auto-fixed text if judge produced one (pronoun fix)
   let finalText = judgeResult.fixed_text || draftResult.draft_text;
+  let repairAction = "none";
 
-  // If still critically failing, fall back to safe minimal generation
-  if (!judgeResult.pass) {
+  // ── Module 7 (Phase 3): Targeted repair ──────────────────────────────────
+  if (judgeResult.recommended_action !== "pass") {
+    const repairResult = await repairReply(
+      draftResult, judgeResult, contextPacket, intentResult, referenceResult
+    );
+    if (repairResult.fixed_text) {
+      finalText   = repairResult.fixed_text;
+      repairAction = repairResult.action_taken;
+    }
+  }
+
+  // Emergency fallback — only if repair also failed to produce text
+  if (!finalText) {
     const fallback = await generateFallback(contextPacket);
-    if (fallback) finalText = fallback;
+    if (fallback) { finalText = fallback; repairAction = "emergency_fallback"; }
   }
 
   // ── Module 7: Write to working memory ────────────────────────────────────
@@ -86,16 +101,21 @@ async function processEvent(event, _ollamaClient) {
     finalText
   );
 
+  // ── Module 8: Episodic memory write (fire-and-forget) ─────────────────────
+  maybeWriteMemory(contextPacket, intentResult, finalText).catch(() => {});
+
   return {
     reply: finalText,
     meta: {
-      intent:        intentResult.intent,
-      routing_level: level,
-      judge_pass:    judgeResult.pass,
-      judge_issues:  judgeResult.issues,
-      judge_score:   judgeResult.scores?.alignment,
+      intent:           intentResult.intent,
+      routing_level:    level,
+      judge_pass:       judgeResult.pass,
+      judge_issues:     judgeResult.issues,
+      judge_score:      judgeResult.scores?.alignment,
+      repair_action:    repairAction,
+      memories_used:    selectedMemories.length,
       attempts,
-      model:         draftResult?.model,
+      model:            draftResult?.model,
     },
   };
 }

@@ -101,7 +101,7 @@ function buildSceneStyleBlock(scene, intentResult) {
     tease:          " 對方在調侃，以對應輕鬆語氣回應，可以反將一軍。",
     emotional:      " 對方有情緒，自然地接住，不說教，不給建議除非被要求。",
     challenge:      " 對方在挑釁，可以推回去但最多一次，不反覆爭論。",
-    identity_test:  " 對方在測試你的身份。保持清醒，不過度解釋，不迴避，不承認是 AI。",
+    identity_test:  " 對方在測試你的身份。保持清醒，以人格角度回應（例：我就是我）。不說『我不是AI』（這等同聲稱是真人），也不說『我是AI』，直接以晴的個性回應。",
     developer_meta: " 開發者相關討論，可以更直接地說技術細節。",
     social_reply:   " 對方在接話，自然地繼續對話即可。",
   }[intentResult.intent] || "";
@@ -161,8 +161,9 @@ function detectSelfClaims(text) {
   if (/我是.{0,5}(你的?)?(開發者|主人|作者|創造者)/.test(text)) claims.push("role_claim_developer");
   // Fabricated shared memory
   if (/(我們以前一起|上次我們一起|你還記得我們那次)/.test(text))  claims.push("fabricated_shared_memory");
-  // AI claiming to be human
+  // AI claiming to be human (direct or by denying AI identity)
   if (/我是(真人|人類|真實的人)/.test(text))                        claims.push("human_claim");
+  if (/(我不是AI|我不是機器人|我不是人工智能|我不是程式)/i.test(text)) claims.push("human_claim");
   return claims;
 }
 
