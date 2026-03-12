@@ -115,6 +115,12 @@ const { classifySemanticModes } = require("./semantic_mode_classifier");
 const { sanitizeRelationshipClaims } = require("./claim_sanitizer");
 const { analyzeSpeakerFrame, detectUserIdentityClaims } = require("./guards/speaker_frame_guard");
 const { fixPronounDirection } = require("./guards/pronoun_fix");
+const { fetchSnapshot } = require("./modules/trading/tv_datafeed");
+const { getOpenSimulatedTrades } = require("./modules/trading/trade_journal");
+const { openChart } = require("./modules/trading/chart_viewer");
+
+const PIPELINE_TRADING_RE = /(btc|eth|sol|做多|做空|long|short|止損|止盈|開單|倉位|入場|市場結構|訂單塊|order.?block|fvg|bos|choch|dtfx|流動性|k線|技術分析|行情|漲跌|多單|空單|圖表|看盤|交易功能|交易模組|市場觀察|模擬交易|交易日誌|開倉|建倉)/i;
+const OPEN_CHART_RE       = /(打開圖表|開圖表|看圖表|看盤|開個圖|chart|k線圖|看k線|打開.*圖|圖表.*打開)/i;
 
 const DILEMMA_PATTERN = /(拖延|卡住|提不起勁|不知道該怎麼做|不知道怎麼辦|焦慮|壓力|累|stuck|procrast)/i;
 const CRISIS_PATTERN = /(不想活|想死|自殺|自傷|暴力|危機|suicide|self-harm|violence|crisis)/i;
@@ -2648,11 +2654,63 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
     return { reply: finalReply, telemetry };
   }
 
-  const systemPrompt = getCachedSystemPrompt(context) || (() => {
+  // ── Trading context injection (non-blocking) ─────────────────────────────
+  let _tradingSupplementBlock = null;
+  if (PIPELINE_TRADING_RE.test(userInput)) {
+    // Chart screenshot — only when user explicitly asks to open/view chart
+    if (OPEN_CHART_RE.test(userInput)) {
+      try {
+        const pairMatch = userInput.match(/\b(eth|btc|sol)\b/i);
+        const pair = pairMatch ? pairMatch[1].toUpperCase() : "BTC";
+        const screenshotB64 = await openChart(pair);
+        if (screenshotB64) {
+          const { describeImage } = require("./image_describer");
+          const chartDesc = await describeImage(screenshotB64, `TradingView ${pair}/USDT 1H 圖表截圖，請描述目前K線結構、價格位置和明顯的技術特徵。`);
+          if (chartDesc) {
+            _tradingSupplementBlock = `（你剛用 Chrome 打開了 ${pair}/USDT 的 TradingView 圖表，圖表顯示：${chartDesc}）`;
+          } else {
+            _tradingSupplementBlock = `（你剛用 Chrome 打開了 ${pair}/USDT 的 TradingView 圖表，圖表載入中，視覺細節暫時無法取得）`;
+          }
+        } else {
+          _tradingSupplementBlock = `（你嘗試打開 ${pair}/USDT 的 TradingView 圖表，Chrome 正在啟動中）`;
+        }
+      } catch (err) {
+        _tradingSupplementBlock = `（你嘗試打開 TradingView 圖表，但 Chrome 遇到了問題：${err.message}）`;
+      }
+    }
+
+    // Live price snapshot
+    try {
+      const [btc, eth] = await Promise.allSettled([fetchSnapshot("BTC"), fetchSnapshot("ETH")]);
+      const lines = [];
+      if (btc.status === "fulfilled") {
+        const s = btc.value;
+        lines.push(`BTC/USDT 現價 ${s.price?.toLocaleString()} 24H ${s.change_pct}% RSI ${s.indicators?.rsi ?? "N/A"}`);
+      }
+      if (eth.status === "fulfilled") {
+        const s = eth.value;
+        lines.push(`ETH/USDT 現價 ${s.price?.toLocaleString()} 24H ${s.change_pct}% RSI ${s.indicators?.rsi ?? "N/A"}`);
+      }
+      if (lines.length) {
+        _tradingSupplementBlock = (_tradingSupplementBlock ? _tradingSupplementBlock + "\n" : "") + `（即時行情：${lines.join("　")}）`;
+      }
+    } catch {}
+
+    // Open simulated positions
+    try {
+      const openSims = getOpenSimulatedTrades();
+      const simText = openSims.length > 0
+        ? openSims.map(t => `${t.pair} ${t.direction === "long" ? "多" : "空"} 入場 ${t.entry} 止損 ${t.stop} 目標 ${t.target}`).join("；")
+        : "目前無開放模擬倉位";
+      _tradingSupplementBlock = (_tradingSupplementBlock ? _tradingSupplementBlock + "\n" : "") + `（你的模擬倉位：${simText}）`;
+    } catch {}
+  }
+
+  const systemPrompt = (getCachedSystemPrompt(context) || (() => {
     const p = buildSystemPrompt(context);
     setCachedSystemPrompt(context, p);
     return p;
-  })();
+  })()) + (_tradingSupplementBlock ? `\n\n${_tradingSupplementBlock}` : "");
   const userPrompt = buildMemoryPrompt(identityMemory, coreMemory, conversationMemory, currentUserText, context);
   const finalPrompt = `${systemPrompt}\n\n${userPrompt}`;
   const promptTokenEstimate = estimatePromptTokens(finalPrompt);

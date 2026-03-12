@@ -27,7 +27,7 @@ const DEVELOPER_RE = /開發者|你的?(主人|創造者|作者)|jimmy/i;
 const QUESTION_RE  = /[？?][\s]*$/;
 const TEASE_RE     = /(笑死|哈哈|幹|屁|呵呵|白痴|蠢|蛋|神經|傻|裝|瘋|沒品|鬼才|三八|廢物)/i;
 const EMOTIONAL_RE = /(好累|好難|心情|傷心|難過|失落|焦慮|壓力|崩潰|哭|委屈|不開心|很痛|很煩|受傷)/;
-const TRADING_RE   = /(btc|eth|sol|做多|做空|long|short|止損|止盈|開單|倉位|入場|市場結構|訂單塊|order.?block|fvg|bos|choch|dtfx|流動性|k線|技術分析|行情|漲跌|多單|空單)/i;
+const TRADING_RE   = /(btc|eth|sol|做多|做空|long|short|止損|止盈|開單|倉位|入場|市場結構|訂單塊|order.?block|fvg|bos|choch|dtfx|流動性|k線|技術分析|行情|漲跌|多單|空單|圖表|看盤|交易功能|交易模組|市場觀察|模擬交易|交易日誌|開倉|建倉)/i;
 
 async function parseIntent(contextPacket, ollamaClient) {
   const text = contextPacket.current_message.text;

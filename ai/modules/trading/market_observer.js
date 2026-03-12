@@ -13,14 +13,35 @@
 //   quickSnapshot(asset)  — price snapshot only (fast, no LLM)
 
 const axios    = require("axios");
+const fs       = require("fs");
+const path     = require("path");
 const { fetchSnapshot, fetchMultiTF }    = require("./tv_datafeed");
 const { analyzeMultiTF }                 = require("./dtfx_analyzer");
 
 const OLLAMA_URL = () => process.env.OLLAMA_URL || "http://localhost:11434";
 const LLM_MODEL  = () => process.env.LLM_MODEL  || "qwen3:8b";
 
-// Observation history (in-memory, last 20 per asset)
-const observationCache = { BTC: [], ETH: [] };
+// ── Observation cache — persisted to disk ─────────────────────────────────────
+const OBS_FILE = path.join(__dirname, "../../../memory/trades/observations.json");
+
+function _loadCache() {
+  try {
+    if (fs.existsSync(OBS_FILE)) {
+      const d = JSON.parse(fs.readFileSync(OBS_FILE, "utf8"));
+      return { BTC: Array.isArray(d.BTC) ? d.BTC.slice(-20) : [], ETH: Array.isArray(d.ETH) ? d.ETH.slice(-20) : [] };
+    }
+  } catch { /* start fresh */ }
+  return { BTC: [], ETH: [] };
+}
+
+function _saveCache() {
+  try {
+    fs.mkdirSync(path.dirname(OBS_FILE), { recursive: true });
+    fs.writeFileSync(OBS_FILE, JSON.stringify(observationCache));
+  } catch { /* ignore */ }
+}
+
+const observationCache = _loadCache();
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -55,10 +76,11 @@ async function observe(asset, opts = {}) {
     report.trade_idea = await generateTradeIdea(report);
   }
 
-  // Cache
+  // Cache + persist
   const cache = observationCache[A] || (observationCache[A] = []);
   cache.push({ ...report, observed_at: Date.now() });
   if (cache.length > 20) cache.splice(0, cache.length - 20);
+  _saveCache();
 
   return report;
 }

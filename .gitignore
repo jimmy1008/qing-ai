@@ -38,8 +38,10 @@ desktop.ini
 
 # ── 瀏覽器 session / Cookie（含登入憑證）──
 connectors/threads_browser/threads_profile/
+connectors/threads_browser/tv_profile/
 connectors/threads_browser/*.json
 connectors/threads_browser/*.log
+connectors/chrome/chrome_profile/
 
 # ── Telemetry 執行期資料 ──
 telemetry/backups/

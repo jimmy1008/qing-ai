@@ -11,20 +11,23 @@
 // GET  /api/trading/setups       — 近期合格 setup 列表
 //
 // ── Trade Journal ──
-// POST /api/trading/log           — 記錄新交易計畫
-// PATCH /api/trading/log/:id      — 更新交易結果
-// GET  /api/trading/journal       — 最近 N 筆交易
-// GET  /api/trading/stats         — 統計數據
-// POST /api/trading/reflect/:id   — 生成單筆交易反思
-// GET  /api/trading/review        — 最近 N 筆的週期性回顧
-// GET  /api/trading/hypothesis    — 策略優化假設
-// POST /api/trading/analyze       — 分析入場 setup（入場前評估）
-// GET  /api/trading/core          — DTFX Core reference
+// POST /api/trading/log              — 記錄新交易計畫
+// PATCH /api/trading/log/:id         — 更新交易結果
+// GET  /api/trading/journal          — 最近 N 筆交易（?simulated=1 只看模擬）
+// GET  /api/trading/stats            — 真實交易統計數據
+// GET  /api/trading/stats/simulated  — 模擬交易統計數據
+// GET  /api/trading/simulated        — 目前開放中的模擬倉位
+// POST /api/trading/reflect/:id      — 生成單筆交易反思
+// GET  /api/trading/review           — 最近 N 筆的週期性回顧
+// GET  /api/trading/hypothesis       — 策略優化假設
+// POST /api/trading/analyze          — 分析入場 setup（入場前評估）
+// GET  /api/trading/core             — DTFX Core reference
 
 const express = require("express");
 const { DTFX_CORE, validateSetup } = require("../ai/modules/trading/dtfx_core");
 const {
   logTrade, updateTrade, getRecentTrades, getTrade, getClosedTrades, getStats,
+  getOpenSimulatedTrades, getSimulatedStats,
 } = require("../ai/modules/trading/trade_journal");
 const {
   reflectOnTrade, periodicReview, generateHypothesis, analyzeSetup,
@@ -107,9 +110,13 @@ router.patch("/api/trading/log/:id", (req, res) => {
 });
 
 // ── Get recent journal ────────────────────────────────────────────────────────
+// ?simulated=1 → 只回傳模擬交易；?simulated=0 → 只回傳真實交易
 router.get("/api/trading/journal", (req, res) => {
-  const n = Math.min(Number(req.query.n) || 50, 200);
-  res.json({ trades: getRecentTrades(n) });
+  const n    = Math.min(Number(req.query.n) || 50, 200);
+  let trades = getRecentTrades(n);
+  if (req.query.simulated === "1") trades = trades.filter(t => t.simulated === true);
+  if (req.query.simulated === "0") trades = trades.filter(t => !t.simulated);
+  res.json({ trades });
 });
 
 // ── Get trade by id ───────────────────────────────────────────────────────────
@@ -120,8 +127,19 @@ router.get("/api/trading/log/:id", (req, res) => {
 });
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
+// 真實交易統計（排除模擬倉位）
 router.get("/api/trading/stats", (_req, res) => {
   res.json(getStats());
+});
+
+// 模擬交易統計
+router.get("/api/trading/stats/simulated", (_req, res) => {
+  res.json(getSimulatedStats());
+});
+
+// 目前開放中的模擬倉位
+router.get("/api/trading/simulated", (_req, res) => {
+  res.json({ simulated: getOpenSimulatedTrades() });
 });
 
 // ── DTFX Core reference ───────────────────────────────────────────────────────

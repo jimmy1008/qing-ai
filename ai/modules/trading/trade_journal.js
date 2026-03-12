@@ -85,6 +85,8 @@ function logTrade(data) {
     structure:   data.structure  || "",
     reason:      data.reason     || "",
     auxiliary:   data.auxiliary  || {},
+    simulated:   data.simulated === true,   // 模擬倉位標記
+    sim_status:  data.simulated === true ? (data.sim_status || "watching") : undefined,
     status:      "open",
     result: {
       outcome:     null,
@@ -109,9 +111,10 @@ function updateTrade(id, patch) {
   if (idx === -1) return null;
 
   const trade = trades[idx];
-  if (patch.result) Object.assign(trade.result, patch.result);
+  if (patch.result)     Object.assign(trade.result, patch.result);
   if (patch.status)     trade.status = patch.status;
   if (patch.reflection) trade.reflection = patch.reflection;
+  if (patch.sim_status) trade.sim_status = patch.sim_status;
   trade.updated_at = Date.now();
 
   // Auto-compute rr_achieved
@@ -151,10 +154,10 @@ function getClosedTrades() {
 }
 
 /**
- * Compute statistics over all closed trades.
+ * Compute statistics over all closed REAL trades (excluding simulated).
  */
 function getStats() {
-  const closed = getClosedTrades();
+  const closed = getClosedTrades().filter(t => !t.simulated);
   if (closed.length === 0) return { total: 0, wins: 0, losses: 0, breakeven: 0, winRate: 0, avgRR: 0, byPair: {}, bySession: {}, byEntryType: {} };
 
   const wins      = closed.filter(t => t.result.outcome === "win").length;
@@ -213,4 +216,28 @@ function groupBy(arr, key, statsFn) {
   return groups;
 }
 
-module.exports = { logTrade, updateTrade, getRecentTrades, getTrade, getClosedTrades, getStats };
+/**
+ * Get all open simulated trades (simulated: true && status: "open").
+ */
+function getOpenSimulatedTrades() {
+  return loadAll().filter(t => t.simulated === true && t.status === "open");
+}
+
+/**
+ * Get stats for simulated trades only (closed).
+ */
+function getSimulatedStats() {
+  const closed = getClosedTrades().filter(t => t.simulated === true);
+  if (closed.length === 0) return { total: 0, wins: 0, losses: 0, breakeven: 0, winRate: 0, avgRR: 0 };
+  const wins      = closed.filter(t => t.result.outcome === "win").length;
+  const losses    = closed.filter(t => t.result.outcome === "loss").length;
+  const breakeven = closed.filter(t => t.result.outcome === "breakeven").length;
+  const rrVals    = closed.map(t => t.result.rr_achieved).filter(r => r != null);
+  const avgRR     = rrVals.length ? Number((rrVals.reduce((a,b)=>a+b,0)/rrVals.length).toFixed(2)) : 0;
+  return { total: closed.length, wins, losses, breakeven, winRate: Number(((wins/closed.length)*100).toFixed(1)), avgRR };
+}
+
+module.exports = {
+  logTrade, updateTrade, getRecentTrades, getTrade, getClosedTrades, getStats,
+  getOpenSimulatedTrades, getSimulatedStats,
+};

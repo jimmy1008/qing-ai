@@ -104,7 +104,7 @@ function buildSceneStyleBlock(scene, intentResult) {
     identity_test:  " 對方在測試你的身份。保持清醒，以人格角度回應（例：我就是我）。不說『我不是AI』（這等同聲稱是真人），也不說『我是AI』，直接以晴的個性回應。",
     developer_meta:   " 開發者相關討論，可以更直接地說技術細節。",
     social_reply:     " 對方在接話，自然地繼續對話即可。",
-    trading_research: " 交易或市場討論。你是正在學習 DTFX 策略的研究員，語氣像在真誠思考，不預測漲跌，不給不確定的建議，承認自己在學習中。有自己的觀察和懷疑。",
+    trading_research: " 談到市場或交易。你在學 DTFX，有自己的看法和疑問，不裝懂，不預測。有真實的市場觀察工具可以用。",
   }[intentResult.intent] || "";
 
   return base + addon;
@@ -120,6 +120,22 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
   if (selectedMemories.length > 0) {
     lines.push("[你記得的事]");
     selectedMemories.slice(0, 3).forEach(m => lines.push(`· ${m.content || m.text || ""}`));
+    lines.push("");
+  }
+
+  // Live market data — presented as 晴's own awareness, not a labeled data block
+  if (contextPacket.meta?.market_context) {
+    lines.push(`（你剛瞄了一眼市場：${contextPacket.meta.market_context.replace(/\n/g, " / ")}）`);
+    lines.push("");
+  }
+
+  // Simulated positions — presented as 晴's own knowledge
+  if (contextPacket.meta?.sim_positions) {
+    const pos = contextPacket.meta.sim_positions;
+    lines.push(pos === "目前無開放模擬倉位"
+      ? "（你目前沒有開放中的模擬倉位）"
+      : `（你的模擬倉位：${pos.replace(/\n/g, " / ")}）`
+    );
     lines.push("");
   }
 

@@ -25,6 +25,8 @@ const { judgeResponse }        = require("./modules/response_judge");
 const { maybeWriteMemory }     = require("./modules/memory_writer");
 const { repairReply }          = require("./modules/repair_rewriter");
 const { makeSessionKey, addTurn } = require("./memory/working_memory");
+const { fetchSnapshot }           = require("./modules/trading/tv_datafeed");
+const { getOpenSimulatedTrades }  = require("./modules/trading/trade_journal");
 const axios = require("axios");
 
 const MAX_RETRY = 2; // max generation attempts before fallback
@@ -54,6 +56,39 @@ async function processEvent(event, _ollamaClient) {
 
   // ── Module 4: Memory selection ────────────────────────────────────────────
   const selectedMemories = await selectMemories(contextPacket, intentResult);
+
+  // ── Module 4.5: Market context injection (trading_research only) ──────────
+  // Fetch live BTC/ETH snapshots and inject into context so 晴 has real data
+  if (intentResult.intent === "trading_research") {
+    try {
+      const [btc, eth] = await Promise.allSettled([
+        fetchSnapshot("BTC"), fetchSnapshot("ETH"),
+      ]);
+      const lines = [];
+      if (btc.status === "fulfilled") {
+        const s = btc.value;
+        lines.push(`BTC/USDT  現價 ${s.price?.toLocaleString()}  24H ${s.change_pct}%  RSI ${s.indicators?.rsi ?? "N/A"}  Rec ${s.indicators?.recommend != null ? (s.indicators.recommend > 0.2 ? "買" : s.indicators.recommend < -0.2 ? "賣" : "中立") : "N/A"}`);
+      }
+      if (eth.status === "fulfilled") {
+        const s = eth.value;
+        lines.push(`ETH/USDT  現價 ${s.price?.toLocaleString()}  24H ${s.change_pct}%  RSI ${s.indicators?.rsi ?? "N/A"}  Rec ${s.indicators?.recommend != null ? (s.indicators.recommend > 0.2 ? "買" : s.indicators.recommend < -0.2 ? "賣" : "中立") : "N/A"}`);
+      }
+      if (lines.length) contextPacket.meta.market_context = lines.join("\n");
+    } catch { /* non-blocking */ }
+
+    // Inject open simulated positions
+    try {
+      const openSims = getOpenSimulatedTrades();
+      if (openSims.length > 0) {
+        const tw = d => new Date(d).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        contextPacket.meta.sim_positions = openSims.map(t =>
+          `${t.pair} ${t.direction === "long" ? "多" : "空"}  入場 ${t.entry}  止損 ${t.stop}  目標 ${t.target}  計畫RR ${t.rr_planned}  建倉 ${tw(t.created_at)}`
+        ).join("\n");
+      } else {
+        contextPacket.meta.sim_positions = "目前無開放模擬倉位";
+      }
+    } catch { /* non-blocking */ }
+  }
 
   // ── Modules 5+6: Generate → Judge loop ───────────────────────────────────
   let draftResult  = null;
