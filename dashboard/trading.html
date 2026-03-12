@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>交易日誌 — 晴 DTFX</title>
+  <title>看盤 & 交易日誌 — 晴 DTFX</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -124,8 +124,92 @@
     }
     .modal-title { font-size: 16px; font-weight: 700; }
 
+    /* market watch panel */
+    .mw-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .mw-card {
+      background: #0d0f14;
+      border: 1px solid #2a2d35;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .mw-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .mw-asset { font-size: 18px; font-weight: 700; }
+    .mw-price { font-size: 24px; font-weight: 700; color: #e2e4ef; }
+    .mw-change-pos { color: #4ade80; font-size: 13px; }
+    .mw-change-neg { color: #f87171; font-size: 13px; }
+    .mw-indicators {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 11px;
+    }
+    .mw-ind-chip {
+      background: #1a1d23;
+      border: 1px solid #2a2d35;
+      border-radius: 4px;
+      padding: 2px 8px;
+      color: #8b8fa8;
+    }
+    .mw-bias {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 12px;
+      border-radius: 20px;
+      margin-top: 6px;
+    }
+    .bias-strong_long  { background:#1a3a1a; color:#4ade80; border:1px solid #166534; }
+    .bias-lean_long    { background:#1a2a1a; color:#86efac; border:1px solid #166534; }
+    .bias-neutral      { background:#1e2030; color:#93c5fd; border:1px solid #1e3a8a; }
+    .bias-lean_short   { background:#2a1a1a; color:#fca5a5; border:1px solid #991b1b; }
+    .bias-strong_short { background:#3a1a1a; color:#f87171; border:1px solid #991b1b; }
+    .mw-tf-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .mw-tf-chip {
+      font-size: 11px;
+      padding: 2px 10px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .mw-tf-bullish { background:#1a3a2a; color:#34d399; border:1px solid #065f46; }
+    .mw-tf-bearish { background:#3a1a1a; color:#f87171; border:1px solid #991b1b; }
+    .mw-tf-ranging { background:#1e2030; color:#93c5fd; border:1px solid #1e3a8a; }
+    .mw-tf-undef   { background:#202020; color:#6b6f85; border:1px solid #333; }
+    .mw-trade-idea {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #7dd3fc;
+      line-height: 1.6;
+      font-style: italic;
+      border-top: 1px solid #2a2d35;
+      padding-top: 8px;
+      white-space: pre-wrap;
+    }
+    .mw-levels {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #8b8fa8;
+    }
+    .mw-levels .lbl { color: #6b6f85; margin-right: 4px; }
+
     @media (max-width: 900px) {
       .trading-grid { grid-template-columns: 1fr; }
+      .mw-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -139,13 +223,26 @@
     </div>
     <nav class="topbar-nav">
       <button class="btn" type="button" onclick="location.href='/'">← 控制台</button>
+      <button class="btn" type="button" onclick="observeMarket('BTC')">觀察 BTC</button>
+      <button class="btn" type="button" onclick="observeMarket('ETH')">觀察 ETH</button>
       <button class="btn" type="button" onclick="loadReview()">週期回顧</button>
       <button class="btn" type="button" onclick="loadHypothesis()">優化假設</button>
-      <button class="btn" type="button" onclick="loadData()">刷新</button>
+      <button class="btn" type="button" onclick="refreshSnapshots()">刷新快照</button>
     </nav>
   </header>
 
   <main style="padding:16px;">
+
+    <!-- Market Watch -->
+    <div style="margin-bottom:4px;font-size:13px;color:#6b6f85;display:flex;align-items:center;gap:12px;">
+      <span style="font-weight:700;color:#b0b3c4;">市場觀察</span>
+      <span id="observeStatus" style="font-size:12px;"></span>
+    </div>
+    <div class="mw-grid">
+      <div class="mw-card" id="mw-BTC"><div style="color:#6b6f85;font-size:13px;">點擊「觀察 BTC」載入分析</div></div>
+      <div class="mw-card" id="mw-ETH"><div style="color:#6b6f85;font-size:13px;">點擊「觀察 ETH」載入分析</div></div>
+    </div>
+
     <div class="trading-grid">
       <!-- Left: log form + stats -->
       <div class="tl">
@@ -260,6 +357,7 @@
         </div>
       </div>
     </div>
+    </div><!-- end trading-grid outer -->
   </main>
 
   <!-- Close trade modal -->
@@ -293,6 +391,117 @@
   // ── Init ───────────────────────────────────────────────────────────────────
   loadData();
   setInterval(loadData, 30000);
+  refreshSnapshots();
+  setInterval(refreshSnapshots, 60000);
+
+  // ── Market Observation ─────────────────────────────────────────────────────
+
+  async function refreshSnapshots() {
+    for (const asset of ['BTC','ETH']) {
+      try {
+        const snap = await fetch(`/api/trading/observe/${asset}/quick`).then(r=>r.json());
+        if (!snap.error) renderSnapshotCard(asset, snap);
+      } catch {}
+    }
+  }
+
+  async function observeMarket(asset) {
+    const card = document.getElementById('mw-'+asset);
+    card.innerHTML = `<div style="color:#6b6f85;font-size:13px;">⏳ 正在觀察 ${asset}，拉取 TradingView 資料 + DTFX 分析中...</div>`;
+    document.getElementById('observeStatus').textContent = `分析 ${asset} 中...`;
+    try {
+      const res = await fetch(`/api/trading/observe/${asset}`).then(r=>r.json());
+      if (res.error) { card.innerHTML = `<div style="color:#f87171;">${res.error}</div>`; return; }
+      renderObservationCard(asset, res);
+      document.getElementById('observeStatus').textContent =
+        `${asset} 更新於 ${new Date().toLocaleTimeString('zh-TW')}`;
+    } catch(e) {
+      card.innerHTML = `<div style="color:#f87171;">觀察失敗：${e.message}</div>`;
+    }
+  }
+
+  function renderSnapshotCard(asset, snap) {
+    const card = document.getElementById('mw-'+asset);
+    // Only update if no full observation loaded yet
+    if (card.dataset.full === '1') return;
+    const chg = snap.change_pct;
+    const chgClass = chg >= 0 ? 'mw-change-pos' : 'mw-change-neg';
+    const chgSign  = chg >= 0 ? '+' : '';
+    card.innerHTML = `
+      <div class="mw-header">
+        <span class="mw-asset">${asset}/USDT</span>
+        <span style="font-size:11px;color:#6b6f85;">快照</span>
+      </div>
+      <div class="mw-price">${snap.price?.toLocaleString() || '-'}</div>
+      <div class="${chgClass}">${chgSign}${chg}%</div>
+      <div class="mw-indicators">
+        ${snap.indicators?.rsi != null ? `<span class="mw-ind-chip">RSI ${snap.indicators.rsi}</span>` : ''}
+        ${snap.indicators?.recommend != null ? `<span class="mw-ind-chip">TV Rec ${snap.indicators.recommend > 0 ? '買' : snap.indicators.recommend < 0 ? '賣' : '中立'}</span>` : ''}
+        ${snap.volume ? `<span class="mw-ind-chip">Vol ${fmtVol(snap.volume)}</span>` : ''}
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#6b6f85;">點「觀察 ${asset}」進行 DTFX 完整分析</div>
+    `;
+  }
+
+  function renderObservationCard(asset, obs) {
+    const card = document.getElementById('mw-'+asset);
+    card.dataset.full = '1';
+    const chg = obs.change_pct;
+    const chgClass = chg >= 0 ? 'mw-change-pos' : 'mw-change-neg';
+    const chgSign  = chg >= 0 ? '+' : '';
+    const bias = obs.confluence?.overall_bias || 'neutral';
+    const biasCls = 'mw-bias bias-' + bias.replace('_','-');
+    const score = obs.confluence?.avg_setup_score || 0;
+
+    const tfBiases = obs.confluence?.tf_biases || {};
+    const tfTrends = obs.confluence?.tf_trends || {};
+    const tfChips = ['4H','1H','15M','5M'].map(tf => {
+      const trend = tfTrends[tf] || 'undefined';
+      const cls   = trend === 'bullish' ? 'mw-tf-bullish' : trend === 'bearish' ? 'mw-tf-bearish' : trend === 'ranging' ? 'mw-tf-ranging' : 'mw-tf-undef';
+      return `<span class="mw-tf-chip ${cls}">${tf}: ${trend}</span>`;
+    }).join('');
+
+    // Key levels
+    const obs_list = (obs.key_levels?.order_blocks || []).slice(0,2)
+      .map(o => `${o.type} ${o.bottom?.toLocaleString()}–${o.top?.toLocaleString()}`).join(' | ');
+    const fvg_list = (obs.key_levels?.fvgs || []).slice(0,2)
+      .map(f => `${f.type} ${f.bottom?.toLocaleString()}–${f.top?.toLocaleString()}`).join(' | ');
+    const liq = obs.key_levels?.liquidity;
+    const bslStr = (liq?.bsl || []).slice(0,2).map(l=>l.level?.toLocaleString()).join(', ') || '—';
+    const sslStr = (liq?.ssl || []).slice(0,2).map(l=>l.level?.toLocaleString()).join(', ') || '—';
+
+    const tradeIdea = obs.trade_idea
+      ? `<div class="mw-trade-idea">${obs.trade_idea}</div>` : '';
+
+    card.innerHTML = `
+      <div class="mw-header">
+        <span class="mw-asset">${asset}/USDT</span>
+        <span class="${biasCls}">${bias.replace('_',' ')}</span>
+      </div>
+      <div class="mw-price">${obs.price?.toLocaleString() || '-'}</div>
+      <div class="${chgClass}">${chgSign}${chg}%  &nbsp;|&nbsp; Setup ${score}/100</div>
+      <div class="mw-tf-row">${tfChips}</div>
+      <div class="mw-indicators">
+        ${obs.indicators?.rsi != null ? `<span class="mw-ind-chip">RSI ${obs.indicators.rsi}</span>` : ''}
+        ${obs.latest_bos ? `<span class="mw-ind-chip">${obs.latest_bos.type}</span>` : ''}
+        ${obs.latest_choch ? `<span class="mw-ind-chip">${obs.latest_choch.type}</span>` : ''}
+        ${obs.volume ? `<span class="mw-ind-chip">Vol ${fmtVol(obs.volume)}</span>` : ''}
+      </div>
+      <div class="mw-levels">
+        ${obs_list ? `<span class="lbl">OB:</span>${obs_list}<br>` : ''}
+        ${fvg_list ? `<span class="lbl">FVG:</span>${fvg_list}<br>` : ''}
+        <span class="lbl">BSL:</span>${bslStr} &nbsp; <span class="lbl">SSL:</span>${sslStr}
+      </div>
+      ${tradeIdea}
+    `;
+  }
+
+  function fmtVol(v) {
+    if (v >= 1e9) return (v/1e9).toFixed(1)+'B';
+    if (v >= 1e6) return (v/1e6).toFixed(1)+'M';
+    if (v >= 1e3) return (v/1e3).toFixed(0)+'K';
+    return String(v);
+  }
 
   // RR preview on form change
   ['fEntry','fStop','fTarget','fDir'].forEach(id => {

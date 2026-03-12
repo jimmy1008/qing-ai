@@ -1,6 +1,12 @@
 "use strict";
 // routes/trading.js — DTFX Trading Behavior API
 //
+// ── Market Observation (TradingView) ──
+// GET  /api/trading/observe/:asset       — full observe + LLM trade idea (BTC or ETH)
+// GET  /api/trading/observe/:asset/quick — price snapshot only (fast)
+// GET  /api/trading/observe/:asset/history — recent observations cache
+//
+// ── Trade Journal ──
 // POST /api/trading/log           — 記錄新交易計畫
 // PATCH /api/trading/log/:id      — 更新交易結果
 // GET  /api/trading/journal       — 最近 N 筆交易
@@ -9,6 +15,7 @@
 // GET  /api/trading/review        — 最近 N 筆的週期性回顧
 // GET  /api/trading/hypothesis    — 策略優化假設
 // POST /api/trading/analyze       — 分析入場 setup（入場前評估）
+// GET  /api/trading/core          — DTFX Core reference
 
 const express = require("express");
 const { DTFX_CORE, validateSetup } = require("../ai/modules/trading/dtfx_core");
@@ -18,8 +25,46 @@ const {
 const {
   reflectOnTrade, periodicReview, generateHypothesis, analyzeSetup,
 } = require("../ai/modules/trading/trade_reflector");
+const {
+  observe, quickSnapshot, getObservations,
+} = require("../ai/modules/trading/market_observer");
 
 const router = express.Router();
+
+// ── Market Observation ────────────────────────────────────────────────────────
+
+// Full observation: fetch TradingView data → DTFX analysis → LLM trade idea
+// ?no_llm=1 to skip LLM (faster, returns raw analysis only)
+router.get("/api/trading/observe/:asset", async (req, res) => {
+  const asset = req.params.asset.toUpperCase();
+  if (asset !== "BTC" && asset !== "ETH") {
+    return res.status(400).json({ error: "Only BTC and ETH are supported." });
+  }
+  try {
+    const result = await observe(asset, { noLLM: req.query.no_llm === "1" });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Quick snapshot: current price + indicators only (no candle analysis)
+router.get("/api/trading/observe/:asset/quick", async (req, res) => {
+  const asset = req.params.asset.toUpperCase();
+  try {
+    const snap = await quickSnapshot(asset);
+    res.json(snap);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Recent observation history (cached in memory)
+router.get("/api/trading/observe/:asset/history", (req, res) => {
+  const asset = req.params.asset.toUpperCase();
+  const n = Math.min(Number(req.query.n) || 10, 20);
+  res.json({ observations: getObservations(asset, n) });
+});
 
 // ── Log a new trade plan ──────────────────────────────────────────────────────
 // Body: { pair, direction, entry, stop, target, entry_type, key_area, structure,
