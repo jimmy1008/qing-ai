@@ -6,6 +6,10 @@
 // GET  /api/trading/observe/:asset/quick — price snapshot only (fast)
 // GET  /api/trading/observe/:asset/history — recent observations cache
 //
+// ── 晴 Scheduler ──
+// GET  /api/trading/scheduler    — 排程器狀態（看盤時間、模式、命中率）
+// GET  /api/trading/setups       — 近期合格 setup 列表
+//
 // ── Trade Journal ──
 // POST /api/trading/log           — 記錄新交易計畫
 // PATCH /api/trading/log/:id      — 更新交易結果
@@ -28,6 +32,9 @@ const {
 const {
   observe, quickSnapshot, getObservations,
 } = require("../ai/modules/trading/market_observer");
+const {
+  getSchedulerStatus, getActiveSetups,
+} = require("../ai/modules/trading/trading_scheduler");
 
 const router = express.Router();
 
@@ -64,6 +71,18 @@ router.get("/api/trading/observe/:asset/history", (req, res) => {
   const asset = req.params.asset.toUpperCase();
   const n = Math.min(Number(req.query.n) || 10, 20);
   res.json({ observations: getObservations(asset, n) });
+});
+
+// ── Scheduler status & active setups ─────────────────────────────────────────
+
+// 晴排程器狀態：看盤時間、模式（探索/已優化）、命中率、近期觀察
+router.get("/api/trading/scheduler", (_req, res) => {
+  res.json(getSchedulerStatus());
+});
+
+// 近期發現的合格 setup（score >= 60）
+router.get("/api/trading/setups", (_req, res) => {
+  res.json({ setups: getActiveSetups() });
 });
 
 // ── Log a new trade plan ──────────────────────────────────────────────────────
