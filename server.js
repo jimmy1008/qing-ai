@@ -41,6 +41,9 @@ app.use(require("./routes/chat")({ ollamaClient }));
 app.use(require("./routes/threads"));
 app.use(require("./routes/lora").router);
 app.use(require("./routes/review"));
+app.use(require("./routes/trading"));
+
+app.get("/trading", (_req, res) => res.sendFile(path.join(__dirname, "dashboard", "trading.html")));
 
 // ── Start HTTP server ─────────────────────────────────────────────────────────
 const server = app.listen(PORT, () => {

@@ -102,8 +102,9 @@ function buildSceneStyleBlock(scene, intentResult) {
     emotional:      " 對方有情緒，自然地接住，不說教，不給建議除非被要求。",
     challenge:      " 對方在挑釁，可以推回去但最多一次，不反覆爭論。",
     identity_test:  " 對方在測試你的身份。保持清醒，以人格角度回應（例：我就是我）。不說『我不是AI』（這等同聲稱是真人），也不說『我是AI』，直接以晴的個性回應。",
-    developer_meta: " 開發者相關討論，可以更直接地說技術細節。",
-    social_reply:   " 對方在接話，自然地繼續對話即可。",
+    developer_meta:   " 開發者相關討論，可以更直接地說技術細節。",
+    social_reply:     " 對方在接話，自然地繼續對話即可。",
+    trading_research: " 交易或市場討論。你是正在學習 DTFX 策略的研究員，語氣像在真誠思考，不預測漲跌，不給不確定的建議，承認自己在學習中。有自己的觀察和懷疑。",
   }[intentResult.intent] || "";
 
   return base + addon;
@@ -150,8 +151,9 @@ function inferTone(intentResult) {
     question:       "direct",
     chat:           "casual",
     social_reply:   "casual",
-    developer_meta: "direct",
-    identity_test:  "grounded",
+    developer_meta:   "direct",
+    identity_test:    "grounded",
+    trading_research: "analytical",
   }[intentResult.intent] || "neutral";
 }
 

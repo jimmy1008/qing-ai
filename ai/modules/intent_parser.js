@@ -7,7 +7,7 @@
 // intentResult schema:
 // {
 //   intent: "chat"|"question"|"tease"|"challenge"|"emotional"|"task_request"|
-//           "developer_meta"|"identity_test"|"social_reply"|"nonsense",
+//           "developer_meta"|"identity_test"|"social_reply"|"trading_research"|"nonsense",
 //   sub_intent: string,
 //   emotion: string,
 //   needs_memory: boolean,
@@ -27,6 +27,7 @@ const DEVELOPER_RE = /開發者|你的?(主人|創造者|作者)|jimmy/i;
 const QUESTION_RE  = /[？?][\s]*$/;
 const TEASE_RE     = /(笑死|哈哈|幹|屁|呵呵|白痴|蠢|蛋|神經|傻|裝|瘋|沒品|鬼才|三八|廢物)/i;
 const EMOTIONAL_RE = /(好累|好難|心情|傷心|難過|失落|焦慮|壓力|崩潰|哭|委屈|不開心|很痛|很煩|受傷)/;
+const TRADING_RE   = /(btc|eth|sol|做多|做空|long|short|止損|止盈|開單|倉位|入場|市場結構|訂單塊|order.?block|fvg|bos|choch|dtfx|流動性|k線|技術分析|行情|漲跌|多單|空單)/i;
 
 async function parseIntent(contextPacket, ollamaClient) {
   const text = contextPacket.current_message.text;
@@ -51,6 +52,10 @@ async function parseIntent(contextPacket, ollamaClient) {
   if (EMOTIONAL_RE.test(text)) {
     return make("emotional", "venting", "sad", true, false, 0.25, [], "medium", 1);
   }
+  if (TRADING_RE.test(text)) {
+    return make("trading_research", "market_discussion", "focused", true, false, 0.20,
+      [], "medium", 1);
+  }
 
   // ── LLM classification ────────────────────────────────────────────────────
   return llmClassify(text, scene);
@@ -65,7 +70,7 @@ async function llmClassify(text, scene) {
 訊息："${text.slice(0, 200)}"
 場景：${scene}
 
-intent 只選一個：chat, question, tease, challenge, emotional, task_request, identity_test, social_reply, nonsense
+intent 只選一個：chat, question, tease, challenge, emotional, task_request, identity_test, social_reply, trading_research, nonsense
 
 {"intent":"","sub_intent":"","emotion":"","needs_memory":false,"needs_identity_check":false,"ambiguity_score":0.5,"risk_flags":[],"response_difficulty":"medium","routing_level":1}`;
 

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>交易日誌 — 晴 DTFX</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .trading-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .tl { display: flex; flex-direction: column; gap: 14px; }
+    .tr { display: flex; flex-direction: column; gap: 14px; }
+
+    /* outcome chips */
+    .chip-win        { background:#1a3a1a; color:#4ade80; border:1px solid #166534; }
+    .chip-loss       { background:#3a1a1a; color:#f87171; border:1px solid #991b1b; }
+    .chip-breakeven  { background:#2a2a1a; color:#fde68a; border:1px solid #92400e; }
+    .chip-open       { background:#1e2f50; color:#60a5fa; border:1px solid #1e3a8a; }
+    .chip-long       { background:#1a3a2a; color:#34d399; border:1px solid #065f46; }
+    .chip-short      { background:#3a1a2a; color:#fb7185; border:1px solid #9f1239; }
+
+    .outcome-chip, .dir-chip {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.04em;
+    }
+
+    /* trade card */
+    .trade-card {
+      background: var(--bg-card, #1a1d23);
+      border: 1px solid var(--border, #2a2d35);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .trade-card .tc-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .trade-card .tc-prices {
+      font-size: 12px;
+      color: #8b8fa8;
+    }
+    .trade-card .tc-prices span { margin-right: 12px; }
+    .trade-card .tc-reason {
+      font-size: 12px;
+      color: #b0b3c4;
+      border-top: 1px solid #2a2d35;
+      padding-top: 6px;
+      margin-top: 4px;
+    }
+    .trade-card .tc-reflection {
+      font-size: 12px;
+      color: #7dd3fc;
+      font-style: italic;
+      border-top: 1px solid #2a2d35;
+      padding-top: 6px;
+    }
+    .trade-card .tc-rr {
+      font-size: 13px;
+      color: #a3a8c0;
+    }
+    .trade-card .tc-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    /* log form */
+    .log-form { display: flex; flex-direction: column; gap: 10px; }
+    .form-row { display: flex; gap: 8px; }
+    .form-row label { font-size: 12px; color: #8b8fa8; display: flex; flex-direction: column; gap: 3px; flex: 1; }
+    .form-row input, .form-row select {
+      background: #0d0f14; border: 1px solid #2a2d35; border-radius: 4px;
+      color: #e2e4ef; padding: 5px 8px; font-size: 13px; width: 100%;
+    }
+    textarea.note-input {
+      background: #0d0f14; border: 1px solid #2a2d35; border-radius: 4px;
+      color: #e2e4ef; padding: 7px 10px; font-size: 13px;
+      width: 100%; resize: vertical; min-height: 70px;
+    }
+
+    /* stats row */
+    .stat-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+    .stat-chip {
+      background: #1a1d23; border: 1px solid #2a2d35; border-radius: 6px;
+      padding: 5px 12px; font-size: 13px; display: flex; flex-direction: column;
+      align-items: center; min-width: 80px;
+    }
+    .stat-chip .sc-val  { font-size: 20px; font-weight: 700; color: #e2e4ef; line-height: 1.2; }
+    .stat-chip .sc-lbl  { font-size: 10px; color: #6b6f85; margin-top: 2px; }
+
+    /* reflection / review text */
+    .ai-text {
+      background: #111520; border: 1px solid #2a2d35; border-radius: 6px;
+      padding: 12px 14px; font-size: 13px; color: #93c5fd; line-height: 1.7;
+      white-space: pre-wrap;
+    }
+
+    /* close modal overlay */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7); z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: #1a1d23; border: 1px solid #2a2d35; border-radius: 10px;
+      padding: 22px 24px; width: 380px; display: flex; flex-direction: column; gap: 12px;
+    }
+    .modal-title { font-size: 16px; font-weight: 700; }
+
+    @media (max-width: 900px) {
+      .trading-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="title-block">
+      <h1>晴的交易日誌</h1>
+      <div class="meta-row">
+        <span id="statsLine">載入中...</span>
+      </div>
+    </div>
+    <nav class="topbar-nav">
+      <button class="btn" type="button" onclick="location.href='/'">← 控制台</button>
+      <button class="btn" type="button" onclick="loadReview()">週期回顧</button>
+      <button class="btn" type="button" onclick="loadHypothesis()">優化假設</button>
+      <button class="btn" type="button" onclick="loadData()">刷新</button>
+    </nav>
+  </header>
+
+  <main style="padding:16px;">
+    <div class="trading-grid">
+      <!-- Left: log form + stats -->
+      <div class="tl">
+        <!-- Stats -->
+        <div class="panel">
+          <div class="panel-title">策略表現</div>
+          <div class="stat-chips" id="statsChips">
+            <div class="stat-chip"><span class="sc-val" id="sTotal">-</span><span class="sc-lbl">總交易</span></div>
+            <div class="stat-chip"><span class="sc-val" id="sWinRate">-</span><span class="sc-lbl">勝率</span></div>
+            <div class="stat-chip"><span class="sc-val" id="sAvgRR">-</span><span class="sc-lbl">平均 RR</span></div>
+            <div class="stat-chip"><span class="sc-val" id="sWins" style="color:#4ade80">-</span><span class="sc-lbl">勝</span></div>
+            <div class="stat-chip"><span class="sc-val" id="sLosses" style="color:#f87171">-</span><span class="sc-lbl">敗</span></div>
+          </div>
+          <div id="sessionStats" style="font-size:12px;color:#6b6f85;margin-top:6px;"></div>
+        </div>
+
+        <!-- Log trade form -->
+        <div class="panel">
+          <div class="panel-title">記錄交易</div>
+          <div class="log-form" id="logForm">
+            <div class="form-row">
+              <label>交易對
+                <input id="fPair" type="text" placeholder="BTCUSDT" value="BTCUSDT">
+              </label>
+              <label>方向
+                <select id="fDir">
+                  <option value="long">多 Long</option>
+                  <option value="short">空 Short</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-row">
+              <label>入場價
+                <input id="fEntry" type="number" step="any" placeholder="64000">
+              </label>
+              <label>止損
+                <input id="fStop" type="number" step="any" placeholder="63200">
+              </label>
+              <label>止盈
+                <input id="fTarget" type="number" step="any" placeholder="67000">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Session
+                <select id="fSession">
+                  <option value="london">倫敦盤</option>
+                  <option value="new_york">紐約盤</option>
+                  <option value="asia">亞洲盤</option>
+                  <option value="unknown">不確定</option>
+                </select>
+              </label>
+              <label>時框
+                <select id="fTF">
+                  <option value="1H">1H</option>
+                  <option value="4H">4H</option>
+                  <option value="15M">15M</option>
+                  <option value="1D">1D</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-row">
+              <label>入場方式
+                <select id="fEntryType">
+                  <option value="confirmation_entry">confirmation</option>
+                  <option value="touch_entry">touch</option>
+                  <option value="structure_confirmation">structure confirm</option>
+                </select>
+              </label>
+              <label>關鍵區域
+                <select id="fKeyArea">
+                  <option value="OB">OB</option>
+                  <option value="FVG">FVG</option>
+                  <option value="SSL">SSL</option>
+                  <option value="BSL">BSL</option>
+                  <option value="EQ">EQ</option>
+                </select>
+              </label>
+            </div>
+            <label style="font-size:12px;color:#8b8fa8;">市場結構
+              <input id="fStructure" type="text" placeholder="BOS on 1H, higher low confirmed">
+            </label>
+            <label style="font-size:12px;color:#8b8fa8;">入場理由
+              <textarea class="note-input" id="fReason" placeholder="DTFX OB 反應，成交量增加..."></textarea>
+            </label>
+            <div id="rrPreview" style="font-size:13px;color:#7dd3fc;height:18px;"></div>
+            <button class="btn" type="button" onclick="submitLog()">記錄這筆交易</button>
+          </div>
+        </div>
+
+        <!-- Analyze setup -->
+        <div class="panel">
+          <div class="panel-title">入場前分析</div>
+          <button class="btn" type="button" onclick="analyzeCurrentSetup()">讓晴分析這個 Setup</button>
+          <div id="analyzeResult" class="ai-text" style="display:none;margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <!-- Right: journal + review -->
+      <div class="tr">
+        <!-- AI review / hypothesis -->
+        <div id="reviewPanel" class="panel" style="display:none;">
+          <div class="panel-title" id="reviewTitle">回顧</div>
+          <div id="reviewText" class="ai-text"></div>
+        </div>
+
+        <!-- Journal -->
+        <div class="panel">
+          <div class="panel-title">交易日誌
+            <span style="font-size:12px;color:#6b6f85;font-weight:400;margin-left:8px;">最近 50 筆</span>
+          </div>
+          <div id="journalList" style="display:flex;flex-direction:column;gap:10px;"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Close trade modal -->
+  <div class="modal-overlay" id="closeModal">
+    <div class="modal-box">
+      <div class="modal-title">結束交易</div>
+      <input type="hidden" id="closeId">
+      <div class="form-row">
+        <label>結果
+          <select id="closeOutcome">
+            <option value="win">獲利 Win</option>
+            <option value="loss">虧損 Loss</option>
+            <option value="breakeven">保本 BE</option>
+          </select>
+        </label>
+        <label>出場價格
+          <input id="closeExit" type="number" step="any" placeholder="66500">
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button class="btn" type="button" onclick="submitClose()">確認</button>
+        <button class="btn" type="button" onclick="closeModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let trades = [];
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadData();
+  setInterval(loadData, 30000);
+
+  // RR preview on form change
+  ['fEntry','fStop','fTarget','fDir'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateRRPreview);
+  });
+
+  function updateRRPreview() {
+    const dir    = document.getElementById('fDir').value;
+    const entry  = parseFloat(document.getElementById('fEntry').value) || 0;
+    const stop   = parseFloat(document.getElementById('fStop').value)  || 0;
+    const target = parseFloat(document.getElementById('fTarget').value)|| 0;
+    if (!entry || !stop || !target) { document.getElementById('rrPreview').textContent = ''; return; }
+    const risk   = Math.abs(entry - stop);
+    const reward = dir === 'long' ? target - entry : entry - target;
+    const rr     = risk > 0 ? (reward / risk).toFixed(2) : 0;
+    const col    = rr >= 2 ? '#4ade80' : rr >= 1.5 ? '#fde68a' : '#f87171';
+    document.getElementById('rrPreview').innerHTML =
+      `計畫 RR：<span style="color:${col};font-weight:700;">${rr}:1</span>`;
+  }
+
+  // ── Load data ─────────────────────────────────────────────────────────────
+  async function loadData() {
+    const [jRes, sRes] = await Promise.all([
+      fetch('/api/trading/journal?n=50').then(r=>r.json()).catch(()=>({trades:[]})),
+      fetch('/api/trading/stats').then(r=>r.json()).catch(()=>({})),
+    ]);
+    trades = jRes.trades || [];
+    renderStats(sRes);
+    renderJournal(trades);
+  }
+
+  function renderStats(s) {
+    document.getElementById('sTotal').textContent   = s.total   ?? '-';
+    document.getElementById('sWinRate').textContent = s.winRate != null ? s.winRate + '%' : '-';
+    document.getElementById('sAvgRR').textContent   = s.avgRR   ?? '-';
+    document.getElementById('sWins').textContent    = s.wins    ?? '-';
+    document.getElementById('sLosses').textContent  = s.losses  ?? '-';
+
+    const bySession = s.bySession || {};
+    const lines = Object.entries(bySession).map(([ses, d]) =>
+      `${ses}: 勝率 ${d.winRate}%  RR ${d.avgRR}  (${d.total} 筆)`
+    );
+    document.getElementById('sessionStats').textContent = lines.join('  |  ');
+
+    document.getElementById('statsLine').textContent =
+      `${s.total || 0} 筆 | 勝率 ${s.winRate ?? '-'}% | 平均 RR ${s.avgRR ?? '-'}`;
+  }
+
+  // ── Render journal ─────────────────────────────────────────────────────────
+  function renderJournal(list) {
+    const el = document.getElementById('journalList');
+    if (!list.length) { el.innerHTML = '<div style="color:#6b6f85;font-size:13px;">還沒有交易記錄</div>'; return; }
+    el.innerHTML = list.map(t => tradeCard(t)).join('');
+  }
+
+  function tradeCard(t) {
+    const outcome = t.result?.outcome;
+    const outChip = outcome
+      ? `<span class="outcome-chip chip-${outcome}">${outcome}</span>`
+      : `<span class="outcome-chip chip-open">OPEN</span>`;
+    const dirChip = `<span class="dir-chip chip-${t.direction}">${t.direction.toUpperCase()}</span>`;
+    const rrText  = t.result?.rr_achieved != null
+      ? `實際 RR: ${t.result.rr_achieved}` : `計畫 RR: ${t.rr_planned}`;
+
+    const closeBtn = t.status === 'open'
+      ? `<button class="btn" style="font-size:11px;padding:3px 10px;" onclick="openCloseModal('${t.id}')">結束</button>` : '';
+    const reflectBtn = t.status !== 'open' && !t.reflection
+      ? `<button class="btn" style="font-size:11px;padding:3px 10px;" onclick="triggerReflect('${t.id}')">晴的反思</button>` : '';
+
+    const reflectionEl = t.reflection
+      ? `<div class="tc-reflection">${t.reflection}</div>` : '';
+
+    const aux = Object.keys(t.auxiliary||{}).length
+      ? `<div style="font-size:11px;color:#6b6f85;">輔助：${JSON.stringify(t.auxiliary)}</div>` : '';
+
+    const ts = new Date(t.created_at).toLocaleString('zh-TW', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+
+    return `<div class="trade-card">
+      <div class="tc-header">
+        ${dirChip} <span>${t.pair}</span> ${outChip}
+        <span style="font-size:11px;color:#6b6f85;margin-left:auto;">${ts} ${t.session||''} ${t.timeframe||''}</span>
+      </div>
+      <div class="tc-prices">
+        <span>入場 ${t.entry}</span><span>止損 ${t.stop}</span><span>目標 ${t.target}</span>
+        <span>${t.entry_type||''}</span><span>${t.key_area||''}</span>
+      </div>
+      <div class="tc-rr">${rrText}</div>
+      ${t.reason ? `<div class="tc-reason">${t.reason}</div>` : ''}
+      ${aux}
+      ${reflectionEl}
+      <div class="tc-actions">${closeBtn}${reflectBtn}</div>
+    </div>`;
+  }
+
+  // ── Submit new trade ───────────────────────────────────────────────────────
+  async function submitLog() {
+    const body = {
+      pair:       document.getElementById('fPair').value.trim().toUpperCase(),
+      direction:  document.getElementById('fDir').value,
+      entry:      parseFloat(document.getElementById('fEntry').value),
+      stop:       parseFloat(document.getElementById('fStop').value),
+      target:     parseFloat(document.getElementById('fTarget').value),
+      session:    document.getElementById('fSession').value,
+      timeframe:  document.getElementById('fTF').value,
+      entry_type: document.getElementById('fEntryType').value,
+      key_area:   document.getElementById('fKeyArea').value,
+      structure:  document.getElementById('fStructure').value.trim(),
+      reason:     document.getElementById('fReason').value.trim(),
+    };
+    if (!body.pair || !body.entry || !body.stop || !body.target) {
+      alert('請填入交易對、入場、止損、止盈'); return;
+    }
+    const res = await fetch('/api/trading/log', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    }).then(r=>r.json());
+
+    if (res.validation && !res.validation.valid) {
+      const msg = '⚠️ Setup 問題：\n' + res.validation.errors.join('\n');
+      if (!confirm(msg + '\n\n還是要記錄嗎？')) return;
+    }
+    loadData();
+  }
+
+  // ── Close trade modal ──────────────────────────────────────────────────────
+  function openCloseModal(id) {
+    document.getElementById('closeId').value = id;
+    document.getElementById('closeModal').classList.add('open');
+  }
+  function closeModal() {
+    document.getElementById('closeModal').classList.remove('open');
+  }
+
+  async function submitClose() {
+    const id      = document.getElementById('closeId').value;
+    const outcome = document.getElementById('closeOutcome').value;
+    const exit    = parseFloat(document.getElementById('closeExit').value) || null;
+    await fetch(`/api/trading/log/${id}`, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ status:'closed', result:{ outcome, exit_price: exit } }),
+    });
+    closeModal();
+    loadData();
+  }
+
+  // ── Trigger reflection ─────────────────────────────────────────────────────
+  async function triggerReflect(id) {
+    const card = event.target.closest('.trade-card');
+    if (card) card.style.opacity = '0.5';
+    const res = await fetch(`/api/trading/reflect/${id}`, { method:'POST' }).then(r=>r.json());
+    loadData();
+  }
+
+  // ── Review / hypothesis ───────────────────────────────────────────────────
+  async function loadReview() {
+    document.getElementById('reviewPanel').style.display = 'block';
+    document.getElementById('reviewTitle').textContent = '⏳ 生成回顧中...';
+    document.getElementById('reviewText').textContent = '';
+    const res = await fetch('/api/trading/review').then(r=>r.json());
+    document.getElementById('reviewTitle').textContent = `週期性回顧（${res.trades_reviewed || 0} 筆）`;
+    document.getElementById('reviewText').textContent = res.review || res.error || '';
+  }
+
+  async function loadHypothesis() {
+    document.getElementById('reviewPanel').style.display = 'block';
+    document.getElementById('reviewTitle').textContent = '⏳ 生成優化假設中...';
+    document.getElementById('reviewText').textContent = '';
+    const res = await fetch('/api/trading/hypothesis').then(r=>r.json());
+    document.getElementById('reviewTitle').textContent = '策略優化假設';
+    document.getElementById('reviewText').textContent = res.hypothesis || res.error || '';
+  }
+
+  async function analyzeCurrentSetup() {
+    const body = {
+      pair:       document.getElementById('fPair').value.trim().toUpperCase(),
+      direction:  document.getElementById('fDir').value,
+      entry:      parseFloat(document.getElementById('fEntry').value) || 0,
+      stop:       parseFloat(document.getElementById('fStop').value)  || 0,
+      target:     parseFloat(document.getElementById('fTarget').value)|| 0,
+      session:    document.getElementById('fSession').value,
+      timeframe:  document.getElementById('fTF').value,
+      entry_type: document.getElementById('fEntryType').value,
+      key_area:   document.getElementById('fKeyArea').value,
+      structure:  document.getElementById('fStructure').value,
+      rr_planned: parseFloat(document.getElementById('rrPreview').textContent) || 0,
+    };
+    if (!body.pair || !body.entry) { alert('請先填入交易對和入場價'); return; }
+
+    const el = document.getElementById('analyzeResult');
+    el.style.display = 'block';
+    el.textContent = '晴正在分析...';
+    const res = await fetch('/api/trading/analyze', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+    }).then(r=>r.json());
+    el.textContent = res.analysis || res.error || '';
+  }
+  </script>
+</body>
+</html>
