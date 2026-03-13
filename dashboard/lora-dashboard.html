@@ -231,6 +231,7 @@
     </div>
     <div class="top-right">
       <span id="globalBadge" class="badge running">進行中</span>
+      <input id="tokenInput" type="password" placeholder="Team Token" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:12px;width:130px" onchange="localStorage.setItem('teamToken',this.value.trim());loadAll()">
       <button class="btn sm" id="openDrawer">工具抽屜</button>
       <button class="btn sm primary" id="retryAll">全部刷新</button>
       <button class="btn sm" onclick="location.href='/'">← 返回</button>
@@ -1210,6 +1211,13 @@ E('convFilters').addEventListener('click', ev => {
 });
 
 async function loadAll() {
+  // Sync token input with stored token
+  const tok = getToken();
+  if (E('tokenInput')) E('tokenInput').value = tok ? '••••••••' : '';
+  if (!tok) {
+    const entered = prompt('請輸入 Team Token：');
+    if (entered?.trim()) { localStorage.setItem('teamToken', entered.trim()); if (E('tokenInput')) E('tokenInput').value = '••••••••'; }
+  }
   setBadge('globalBadge','running');
   await Promise.all([
     loadOverview(), loadA(), loadReviewAProgress(), loadReviewBProgress(), loadGenStatus(),

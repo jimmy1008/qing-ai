@@ -1,9 +1,12 @@
 "use strict";
 // chart_viewer.js
-// Opens TradingView chart in Chrome (via unified chrome/browser.js),
-// auto-logins via Google, takes screenshot, returns base64 JPEG.
+// Opens TradingView chart in Chrome (unified browser), takes screenshot.
+// Uses ONE persistent named page per pair — no extra login tabs.
 
-const { getPage, ensureTradingViewLogin } = require("../../../connectors/chrome/browser");
+const { getPage, getContext, ensureTradingViewLogin } = require("../../../connectors/chrome/browser");
+
+// One-time login attempt per process run — avoids repeated login flows
+let _tvLoginAttempted = false;
 
 const CHART_URLS = {
   BTC: "https://www.tradingview.com/chart/?symbol=BINANCE%3ABTCUSDT&interval=60",
@@ -11,52 +14,65 @@ const CHART_URLS = {
   SOL: "https://www.tradingview.com/chart/?symbol=BINANCE%3ASOLUSDT&interval=60",
 };
 
-let _tvLoginDone = false;
-
 /**
- * Open a TradingView chart in Chrome, wait for render, return screenshot as base64 JPEG.
- * @param {"BTC"|"ETH"|"SOL"} pair
- * @param {"1"|"5"|"15"|"60"|"240"|"D"} interval
- * @returns {Promise<string>} base64 JPEG
+ * Open (or refresh) TradingView chart in Chrome.
+ * Returns { screenshotB64, url, pair } — or throws on failure.
+ * Uses a single persistent page per pair to avoid tab proliferation.
  */
 async function openChart(pair = "BTC", interval = "60") {
   const key  = String(pair).toUpperCase().replace(/USDT$/i, "");
   const base = CHART_URLS[key] || CHART_URLS.BTC;
   const url  = base.replace("interval=60", `interval=${interval}`);
 
-  // Ensure TradingView session on first call
-  if (!_tvLoginDone) {
-    await ensureTradingViewLogin().catch(() => {});
-    _tvLoginDone = true;
+  // Attempt TradingView login once per process if credentials exist and not yet attempted.
+  // Close the login tab afterwards to keep only the chart tab visible.
+  if (!_tvLoginAttempted && (process.env.GOOGLE_EMAIL || "").trim()) {
+    _tvLoginAttempted = true;
+    try {
+      await ensureTradingViewLogin();
+      // Close the "tradingview" login page — session is now stored in the Chrome profile.
+      // tv_BTC page will inherit the logged-in session.
+      const ctx = await getContext();
+      const pages = ctx.pages();
+      for (const p of pages) {
+        const u = p.url();
+        if (u.includes("tradingview.com") && !u.includes("chart")) {
+          await p.close().catch(() => {});
+        }
+      }
+    } catch (e) { console.warn("[chart_viewer] TV login failed:", e.message); }
   }
 
+  // One page per pair — reused across calls
   const page = await getPage(`tv_${key}`);
 
   const currentUrl = page.url();
-  const needsNav   = !currentUrl.includes("tradingview.com/chart") ||
-                     !currentUrl.includes(key + "USDT");
+  const onChart    = currentUrl.includes("tradingview.com/chart") &&
+                     currentUrl.toUpperCase().includes(key);
 
-  if (needsNav) {
+  if (!onChart) {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
   }
 
-  // Wait for chart canvas
+  // Wait for chart canvas to render
   try {
     await page.waitForSelector("canvas", { timeout: 18000 });
-    await page.waitForTimeout(3500);
+    await page.waitForTimeout(3000);
   } catch { /* proceed anyway */ }
 
-  // Dismiss dialogs
+  // Dismiss any overlay dialogs
   try { await page.keyboard.press("Escape"); } catch {}
   try {
-    const closeBtn = page.locator('[data-name="close"], [aria-label="Close"], .close-button').first();
+    const closeBtn = page.locator('[data-name="close"], [aria-label="Close"]').first();
     if (await closeBtn.count()) await closeBtn.click();
   } catch {}
 
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
 
-  const buf = await page.screenshot({ type: "jpeg", quality: 80 });
-  return buf.toString("base64");
+  const screenshotB64 = (await page.screenshot({ type: "jpeg", quality: 75 })).toString("base64");
+  const finalUrl      = page.url();
+
+  return { screenshotB64, url: finalUrl, pair: key };
 }
 
 module.exports = { openChart };

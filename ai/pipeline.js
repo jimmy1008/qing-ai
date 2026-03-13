@@ -1721,6 +1721,7 @@ function buildSystemPrompt(context) {
     selfPostHint || null,
     observationHint || null,
     searchResultsBlock || null,
+    context._tradingBlock || null,
   ];
 
   if (!isGroup) {
@@ -2276,6 +2277,34 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
       // Best-effort
     }
   }
+  // ── Trading context injection — runs early, before any branch returns ───────
+  // Stored in context so every code path (developer, memory query, normal) sees it.
+  if (PIPELINE_TRADING_RE.test(userInput)) {
+    if (OPEN_CHART_RE.test(userInput)) {
+      try {
+        const _pairM = userInput.match(/\b(eth|btc|sol)\b/i);
+        const _pair  = _pairM ? _pairM[1].toUpperCase() : "BTC";
+        const { url: _chartUrl } = await openChart(_pair);
+        context._tradingBlock = `（你剛用 Chrome 打開了 ${_pair}/USDT 的 TradingView 圖表：${_chartUrl}）`;
+      } catch (err) {
+        context._tradingBlock = `（你嘗試打開 TradingView 圖表，Chrome 回報錯誤：${err.message}）`;
+      }
+    }
+    try {
+      const [_btc, _eth] = await Promise.allSettled([fetchSnapshot("BTC"), fetchSnapshot("ETH")]);
+      const _lines = [];
+      if (_btc.status === "fulfilled") { const s = _btc.value; _lines.push(`BTC/USDT 現價 ${s.price?.toLocaleString()} 24H ${s.change_pct}% RSI ${s.indicators?.rsi ?? "N/A"}`); }
+      if (_eth.status === "fulfilled") { const s = _eth.value; _lines.push(`ETH/USDT 現價 ${s.price?.toLocaleString()} 24H ${s.change_pct}% RSI ${s.indicators?.rsi ?? "N/A"}`); }
+      if (_lines.length) context._tradingBlock = (context._tradingBlock ? context._tradingBlock + "\n" : "") + `（即時行情：${_lines.join("　")}）`;
+    } catch {}
+    try {
+      const _sims = getOpenSimulatedTrades();
+      const _simText = _sims.length > 0 ? _sims.map(t => `${t.pair} ${t.direction === "long" ? "多" : "空"} 入場 ${t.entry} 止損 ${t.stop} 目標 ${t.target}`).join("；") : "目前無開放模擬倉位";
+      context._tradingBlock = (context._tradingBlock ? context._tradingBlock + "\n" : "") + `（你的模擬倉位：${_simText}）`;
+    } catch {}
+    console.log("[TRADING] injected:", context._tradingBlock?.slice(0, 80));
+  }
+
   const emotionBreakdown = getEmotionBreakdown(context);
   const baseline = getPersonalityBaseline();
   const shouldWriteConversationBuffer = !context.event?.meta?.skipConversationBufferWrite;
@@ -2654,65 +2683,23 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
     return { reply: finalReply, telemetry };
   }
 
-  // ── Trading context injection (non-blocking) ─────────────────────────────
-  let _tradingSupplementBlock = null;
-  if (PIPELINE_TRADING_RE.test(userInput)) {
-    // Chart screenshot — only when user explicitly asks to open/view chart
-    if (OPEN_CHART_RE.test(userInput)) {
-      try {
-        const pairMatch = userInput.match(/\b(eth|btc|sol)\b/i);
-        const pair = pairMatch ? pairMatch[1].toUpperCase() : "BTC";
-        const screenshotB64 = await openChart(pair);
-        if (screenshotB64) {
-          const { describeImage } = require("./image_describer");
-          const chartDesc = await describeImage(screenshotB64, `TradingView ${pair}/USDT 1H 圖表截圖，請描述目前K線結構、價格位置和明顯的技術特徵。`);
-          if (chartDesc) {
-            _tradingSupplementBlock = `（你剛用 Chrome 打開了 ${pair}/USDT 的 TradingView 圖表，圖表顯示：${chartDesc}）`;
-          } else {
-            _tradingSupplementBlock = `（你剛用 Chrome 打開了 ${pair}/USDT 的 TradingView 圖表，圖表載入中，視覺細節暫時無法取得）`;
-          }
-        } else {
-          _tradingSupplementBlock = `（你嘗試打開 ${pair}/USDT 的 TradingView 圖表，Chrome 正在啟動中）`;
-        }
-      } catch (err) {
-        _tradingSupplementBlock = `（你嘗試打開 TradingView 圖表，但 Chrome 遇到了問題：${err.message}）`;
-      }
-    }
-
-    // Live price snapshot
-    try {
-      const [btc, eth] = await Promise.allSettled([fetchSnapshot("BTC"), fetchSnapshot("ETH")]);
-      const lines = [];
-      if (btc.status === "fulfilled") {
-        const s = btc.value;
-        lines.push(`BTC/USDT 現價 ${s.price?.toLocaleString()} 24H ${s.change_pct}% RSI ${s.indicators?.rsi ?? "N/A"}`);
-      }
-      if (eth.status === "fulfilled") {
-        const s = eth.value;
-        lines.push(`ETH/USDT 現價 ${s.price?.toLocaleString()} 24H ${s.change_pct}% RSI ${s.indicators?.rsi ?? "N/A"}`);
-      }
-      if (lines.length) {
-        _tradingSupplementBlock = (_tradingSupplementBlock ? _tradingSupplementBlock + "\n" : "") + `（即時行情：${lines.join("　")}）`;
-      }
-    } catch {}
-
-    // Open simulated positions
-    try {
-      const openSims = getOpenSimulatedTrades();
-      const simText = openSims.length > 0
-        ? openSims.map(t => `${t.pair} ${t.direction === "long" ? "多" : "空"} 入場 ${t.entry} 止損 ${t.stop} 目標 ${t.target}`).join("；")
-        : "目前無開放模擬倉位";
-      _tradingSupplementBlock = (_tradingSupplementBlock ? _tradingSupplementBlock + "\n" : "") + `（你的模擬倉位：${simText}）`;
-    } catch {}
-  }
-
-  const systemPrompt = (getCachedSystemPrompt(context) || (() => {
+  // Trading block injected into context._tradingBlock above (before all branches).
+  // Bypass prompt cache when trading data is present — prices change every request.
+  const systemPrompt = (context._tradingBlock ? null : getCachedSystemPrompt(context)) || (() => {
     const p = buildSystemPrompt(context);
-    setCachedSystemPrompt(context, p);
+    if (!context._tradingBlock) setCachedSystemPrompt(context, p);
     return p;
-  })()) + (_tradingSupplementBlock ? `\n\n${_tradingSupplementBlock}` : "");
+  })();
+  if (context._tradingBlock) {
+    console.log("[PROMPT_TRADING_CHECK] _tradingBlock in systemPrompt:", systemPrompt.includes(context._tradingBlock.slice(0, 20)));
+  }
   const userPrompt = buildMemoryPrompt(identityMemory, coreMemory, conversationMemory, currentUserText, context);
-  const finalPrompt = `${systemPrompt}\n\n${userPrompt}`;
+  // Local LLMs have strong recency bias — inject trading block again right before model output.
+  // This is the most salient position (after conversation history, just before generation).
+  const effectiveUserPrompt = context._tradingBlock
+    ? userPrompt + `\n\n[即時系統通知] ${context._tradingBlock} ← 這是剛才發生的真實事件。用第一人稱自然說出來，例如「剛打開了...」「看了一下...」。`
+    : userPrompt;
+  const finalPrompt = `${systemPrompt}\n\n${effectiveUserPrompt}`;
   const promptTokenEstimate = estimatePromptTokens(finalPrompt);
   const promptTooLarge = promptTokenEstimate > PROMPT_WARN_TOKEN_THRESHOLD;
   const promptAnalysis = analyzePromptSections({
@@ -2791,7 +2778,7 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
   {
     const start = Date.now();
     try {
-      initialReply = await runSingleGeneration(ollamaClient, systemPrompt, userPrompt);
+      initialReply = await runSingleGeneration(ollamaClient, systemPrompt, effectiveUserPrompt);
       llmRuntime.main_llm_call_ms = Date.now() - start;
       llmRuntime.llm_call_ms = llmRuntime.main_llm_call_ms;
       llmRuntime.llm_model_used = "main";
@@ -2812,7 +2799,7 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
     llmRuntime.mainRetryUsed = true;
     const retryStart = Date.now();
     try {
-      const retriedReply = await runSingleGeneration(ollamaClient, systemPrompt, userPrompt);
+      const retriedReply = await runSingleGeneration(ollamaClient, systemPrompt, effectiveUserPrompt);
       const retryMs = Date.now() - retryStart;
       llmRuntime.main_llm_call_ms = Number((llmRuntime.main_llm_call_ms || 0) + retryMs);
       if (retriedReply) {
@@ -2896,7 +2883,16 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
   const reframedReply = reframeResponse(context.event, reply) || reply;
   // Strip name prefix and service phrases BEFORE prepending @mention
   // so that "晴晴：..." after @mention is also caught
-  const strippedReply = normalizeUtf8Reply(stripServiceModePhrases(stripNamePrefix(reframedReply))).trim();
+  // When trading context was injected, strip any residual "no-screen" denial sentences.
+  // The model's training priors sometimes override the system prompt instruction.
+  const replyAfterTradingPatch = (() => {
+    if (!context._tradingBlock) return reframedReply;
+    const TRADING_DENIAL_RE = /我(就是個|只是|其實是|終究是)?AI[，,。]?[^。！？!?]*沒有[幕螢]|沒有[幕螢][幕螢]?可以點開|我沒有螢幕|沒有辦法打開[網圖]|我不能打開網站|我沒辦法打開|無法打開網站/g;
+    const segs = String(reframedReply || "").split(/(?<=[。！？!?])\s*/);
+    const filtered = segs.filter(seg => !TRADING_DENIAL_RE.test(seg));
+    return (filtered.length > 0 ? filtered.join("") : reframedReply).trim();
+  })();
+  const strippedReply = normalizeUtf8Reply(stripServiceModePhrases(stripNamePrefix(replyAfterTradingPatch))).trim();
   const finalReply = (
     context.channel === "group"
     && !context.event?.isDirectMention  // reply_to_message_id handles threading for @mention/reply
