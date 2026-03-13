@@ -15,6 +15,7 @@
 const axios    = require("axios");
 const fs       = require("fs");
 const path     = require("path");
+const { enqueueLLM } = require("../../llm_queue");
 const { fetchSnapshot, fetchMultiTF, fetchFundingOI } = require("./tv_datafeed");
 const { analyzeMultiTF }                 = require("./dtfx_analyzer");
 
@@ -225,12 +226,13 @@ async function generateTradeIdea(report) {
   ].join("\n");
 
   try {
-    const resp = await axios.post(`${OLLAMA_URL()}/api/chat`, {
+    // priority 3 — background; conversation calls (priority 1) go first
+    const resp = await enqueueLLM(() => axios.post(`${OLLAMA_URL()}/api/chat`, {
       model:  LLM_MODEL(),
       stream: false,
       think:  false,
       messages: [{ role: "user", content: prompt }],
-    }, { timeout: 60000 });
+    }, { timeout: 60000 }), 3);
     return String(resp.data?.message?.content || "").trim() || "（市場分析暫無內容）";
   } catch (err) {
     console.warn("[market_observer] LLM trade idea failed:", err.message);

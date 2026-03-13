@@ -9,6 +9,7 @@
  */
 
 const axios = require("axios");
+const { enqueueLLM } = require("./llm_queue");
 
 const ENDPOINT = process.env.OLLAMA_ENDPOINT || "http://localhost:11434/api/generate";
 const MAIN_MODEL = process.env.LLM_MODEL || "qwen2.5:14b";
@@ -18,11 +19,12 @@ const MAIN_TIMEOUT_MS = Number(process.env.LLM_MAIN_TIMEOUT_MS || TIMEOUT_MS);
 const FAST_TIMEOUT_MS = Number(process.env.LLM_FAST_TIMEOUT_MS || Math.min(TIMEOUT_MS, 30000));
 const LLM_KEEP_ALIVE = process.env.LLM_KEEP_ALIVE || "1h";
 
-async function callOllama(model, body, timeoutMs = TIMEOUT_MS) {
-  const resp = await axios.post(ENDPOINT, body, {
+// priority 1 = conversation (default), 3 = background tasks
+async function callOllama(model, body, timeoutMs = TIMEOUT_MS, priority = 1) {
+  const resp = await enqueueLLM(() => axios.post(ENDPOINT, body, {
     timeout: timeoutMs,
     headers: { "Content-Type": "application/json" },
-  });
+  }), priority);
   const raw = resp.data?.response || "";
   // Strip qwen3 thinking tags if they leak into the response
   return raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
@@ -85,12 +87,13 @@ function createMultiModelClient() {
     },
 
     // Streaming — main model only, yields tokens one by one
+    // Queued at priority 1 (conversation) before the stream starts
     async *generateStream({ system, prompt, options = {}, timeoutMs = MAIN_TIMEOUT_MS, keepAlive = LLM_KEEP_ALIVE }) {
-      const resp = await axios.post(
+      const resp = await enqueueLLM(() => axios.post(
         ENDPOINT,
         buildBody(MAIN_MODEL, system, prompt, options, true, keepAlive),
         { responseType: "stream", timeout: timeoutMs },
-      );
+      ), 1);
 
       let pending = "";
       for await (const chunk of resp.data) {

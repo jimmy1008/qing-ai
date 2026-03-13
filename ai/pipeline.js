@@ -2245,6 +2245,13 @@ async function applyReflexGate(userInput, context, systemPrompt, initialReply, o
 }
 
 async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
+  // ── Request tracing ────────────────────────────────────────────────────────
+  const _traceId = opts.traceId || Math.random().toString(36).slice(2, 9);
+  const _traceStart = Date.now();
+  const _connector  = context.connector || context.channel || "?";
+  const _userId     = context.userId || context.event?.userId || "?";
+  console.log(`[pipeline][${_traceId}] start connector=${_connector} user=${_userId} len=${String(userInput).length}`);
+
   if (opts.searchSnippets) context = { ...context, searchSnippets: opts.searchSnippets };
   const event = context.event || {};
   const conversationMemoryKey = memoryStore.getConversationMemoryKey(event);
@@ -3347,6 +3354,7 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
     });
   }
 
+  console.log(`[pipeline][${_traceId}] done ${Date.now() - _traceStart}ms len=${String(sceneBoundedReply).length}`);
   return { reply: sceneBoundedReply, telemetry };
 }
 

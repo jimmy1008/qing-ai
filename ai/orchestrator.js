@@ -1,7 +1,35 @@
 "use strict";
+// ═══════════════════════════════════════════════════════════════════════════
 // Orchestrator v2 — Phase 2 multi-module pipeline
-// Parallel path to pipeline.js. Does NOT replace or modify the existing system.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// STATUS: Active parallel path. NOT the default pipeline yet.
 // Enable via ORCHESTRATOR_V2=1 env var or call processEvent() directly.
+//
+// ── Migration plan: v1 pipeline.js → v2 orchestrator.js ────────────────────
+//
+// pipeline.js (v1):
+//   · 3300+ LOC monolith — everything inline
+//   · Many implicit state dependencies (STANCE_INERTIA, mood, ego, etc.)
+//   · Well-tested, battle-hardened, feature-complete
+//   · Hard to unit-test individual stages
+//
+// orchestrator.js (v2):
+//   · Clean module boundaries (context_builder → intent_parser → ... → output)
+//   · Each module is independently testable
+//   · Still missing: persona depth, relationship engine, mood/inertia, scene contract
+//
+// Migration phases:
+//   Phase A (DONE)     — v2 skeleton + basic persona, working for simple convos
+//   Phase B (NEXT)     — Port relationship engine + mood into v2 persona_generator
+//   Phase C            — Port scene contract + intimacy ceiling into v2
+//   Phase D            — Port consistency_judge + reflect_loop into v2 judge/repair
+//   Phase E            — A/B test v2 on 10% of traffic (ORCHESTRATOR_V2=1 on subset)
+//   Phase F            — v2 becomes default; v1 kept for 30 days as fallback
+//   Phase G            — Delete v1 pipeline.js
+//
+// DO NOT merge phases B-G until Phase B is validated in production.
+// ───────────────────────────────────────────────────────────────────────────
 //
 // Data flow:
 //   Platform Event

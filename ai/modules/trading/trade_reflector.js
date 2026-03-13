@@ -7,6 +7,7 @@
 // Model: qwen3:8b (think:false for speed)
 
 const axios = require("axios");
+const { enqueueLLM } = require("../../llm_queue");
 const { DTFX_CORE } = require("./dtfx_core");
 
 const OLLAMA_URL  = () => process.env.OLLAMA_URL  || "http://localhost:11434";
@@ -143,12 +144,13 @@ async function analyzeSetup(setup) {
 
 async function llmCall(prompt) {
   try {
-    const resp = await axios.post(`${OLLAMA_URL()}/api/chat`, {
+    // priority 3 — background; conversation calls (priority 1) go first
+    const resp = await enqueueLLM(() => axios.post(`${OLLAMA_URL()}/api/chat`, {
       model:  LLM_MODEL(),
       stream: false,
       think:  false,
       messages: [{ role: "user", content: prompt }],
-    }, { timeout: TIMEOUT_MS });
+    }, { timeout: TIMEOUT_MS }), 3);
 
     const text = String(resp.data?.message?.content || "").trim();
     return text || "（無法生成反思，請稍後再試）";
