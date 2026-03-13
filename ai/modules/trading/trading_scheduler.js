@@ -350,18 +350,15 @@ async function runObservationCycle() {
       if (_history.length > 100) _history.splice(0, _history.length - 100);
 
       if (score >= SETUP_THRESHOLD && bias !== "neutral") {
-        // ── Step 4a: 有 setup → 生成 LLM 交易想法 ──────────────────────
-        console.log(`[scheduler] setup: ${asset} score=${score} grade=${grade} bias=${bias} → generating trade idea...`);
-        let tradeIdea = null;
+        // ── Step 4a: 有 setup → 存資料（不在背景呼叫 LLM，避免和對話搶 Ollama）──
+        // LLM 交易想法只在用戶主動透過 /api/trading/observe/:asset 請求時才生成。
+        console.log(`[scheduler] setup: ${asset} score=${score} grade=${grade} bias=${bias} — saving (no background LLM).`);
         try {
-          const full = await observe(asset, { noLLM: false });
-          tradeIdea  = full.trade_idea || null;
-
           _activeSetups.unshift({
             asset, score, grade, bias, best_entry_tf: bestTf,
-            price: full.price, change_pct: full.change_pct,
-            structure: full.structure, key_levels: full.key_levels,
-            confluence: full.confluence, trade_idea: tradeIdea,
+            price: quick.price, change_pct: quick.change_pct,
+            structure: quick.structure, key_levels: quick.key_levels,
+            confluence: quick.confluence, trade_idea: null,
             observed_at: Date.now(),
           });
           if (_activeSetups.length > 10) _activeSetups.splice(10);
@@ -369,17 +366,12 @@ async function runObservationCycle() {
 
           // ── Step 4b: 自動建立模擬倉位 ──────────────────────────────────
           await autoOpenSimTrade(
-            asset, full.price, bias,
-            full.key_levels, full.structure,
-            score, grade, bestTf, tradeIdea
+            asset, quick.price, bias,
+            quick.key_levels, quick.structure,
+            score, grade, bestTf, null
           );
         } catch (err) {
-          console.error(`[scheduler] LLM/sim error for ${asset}:`, err.message);
-          // 存 quick 結果，不含 trade idea，仍嘗試建倉
-          _activeSetups.unshift({ ...entry, trade_idea: null, observed_at: Date.now() });
-          if (_activeSetups.length > 10) _activeSetups.splice(10);
-          saveActiveSetups();
-          await autoOpenSimTrade(asset, price, bias, quick.key_levels, quick.structure, score, grade, bestTf, null);
+          console.error(`[scheduler] sim error for ${asset}:`, err.message);
         }
       } else {
         // ── Step 4c: 無 setup — 靜默觀察 ──────────────────────────────

@@ -58,10 +58,12 @@ async function observe(asset, opts = {}) {
   }
 
   // ── Step 1: Fetch data ──────────────────────────────────────────────────
+  // fundingOI is skipped in noLLM/background mode to reduce API load.
+  const fetchFunding = opts.noLLM ? Promise.resolve({ funding_rate: null, open_interest: null }) : fetchFundingOI(A).catch(() => ({ funding_rate: null, open_interest: null }));
   const [snapshot, multiTF, fundingOI] = await Promise.all([
     fetchSnapshot(A).catch(err => ({ error: err.message })),
     fetchMultiTF(A).catch(err => ({ error: err.message, data: {} })),
-    fetchFundingOI(A).catch(() => ({ funding_rate: null, open_interest: null })),
+    fetchFunding,
   ]);
 
   if (snapshot.error) throw new Error(`Snapshot failed: ${snapshot.error}`);
