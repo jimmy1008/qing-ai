@@ -24,6 +24,7 @@
 // GET  /api/trading/core             — DTFX Core reference
 
 const express = require("express");
+const { requireAuth } = require("../auth/auth_middleware");
 const { DTFX_CORE, validateSetup } = require("../ai/modules/trading/dtfx_core");
 const {
   logTrade, updateTrade, getRecentTrades, getTrade, getClosedTrades, getStats,
@@ -36,16 +37,33 @@ const {
   observe, quickSnapshot, getObservations,
 } = require("../ai/modules/trading/market_observer");
 const {
-  getSchedulerStatus, getActiveSetups,
+  getSchedulerStatus, getActiveSetups, getNewsStatus,
 } = require("../ai/modules/trading/trading_scheduler");
+const { getCalendarSummary, getUpcomingEvents } = require("../ai/modules/trading/news_calendar");
 
 const router = express.Router();
+
+// ── Rate limiter for observe endpoints (max 10 req/min per IP) ────────────────
+const _observeHits = new Map();
+function observeRateLimit(req, res, next) {
+  const key = req.ip;
+  const now = Date.now();
+  const window = 60 * 1000;
+  const max = 10;
+  const hits = (_observeHits.get(key) || []).filter(t => now - t < window);
+  hits.push(now);
+  _observeHits.set(key, hits);
+  if (hits.length > max) {
+    return res.status(429).json({ error: "Too many requests. Max 10/min for observe endpoints." });
+  }
+  next();
+}
 
 // ── Market Observation ────────────────────────────────────────────────────────
 
 // Full observation: fetch TradingView data → DTFX analysis → LLM trade idea
 // ?no_llm=1 to skip LLM (faster, returns raw analysis only)
-router.get("/api/trading/observe/:asset", async (req, res) => {
+router.get("/api/trading/observe/:asset", requireAuth, observeRateLimit, async (req, res) => {
   const asset = req.params.asset.toUpperCase();
   if (asset !== "BTC" && asset !== "ETH") {
     return res.status(400).json({ error: "Only BTC and ETH are supported." });
@@ -59,7 +77,7 @@ router.get("/api/trading/observe/:asset", async (req, res) => {
 });
 
 // Quick snapshot: current price + indicators only (no candle analysis)
-router.get("/api/trading/observe/:asset/quick", async (req, res) => {
+router.get("/api/trading/observe/:asset/quick", requireAuth, observeRateLimit, async (req, res) => {
   const asset = req.params.asset.toUpperCase();
   try {
     const snap = await quickSnapshot(asset);
@@ -91,7 +109,7 @@ router.get("/api/trading/setups", (_req, res) => {
 // ── Log a new trade plan ──────────────────────────────────────────────────────
 // Body: { pair, direction, entry, stop, target, entry_type, key_area, structure,
 //         reason, session, timeframe, auxiliary }
-router.post("/api/trading/log", (req, res) => {
+router.post("/api/trading/log", requireAuth, (req, res) => {
   const data = req.body;
   if (!data.pair || !data.entry || !data.stop || !data.target) {
     return res.status(400).json({ error: "必填：pair, entry, stop, target" });
@@ -103,7 +121,7 @@ router.post("/api/trading/log", (req, res) => {
 
 // ── Update trade result ───────────────────────────────────────────────────────
 // Body: { status, result: { outcome, exit_price }, reflection }
-router.patch("/api/trading/log/:id", (req, res) => {
+router.patch("/api/trading/log/:id", requireAuth, (req, res) => {
   const trade = updateTrade(req.params.id, req.body);
   if (!trade) return res.status(404).json({ error: "Trade not found" });
   res.json({ ok: true, trade });
@@ -148,7 +166,7 @@ router.get("/api/trading/core", (_req, res) => {
 });
 
 // ── Reflect on single trade (LLM) ─────────────────────────────────────────────
-router.post("/api/trading/reflect/:id", async (req, res) => {
+router.post("/api/trading/reflect/:id", requireAuth, async (req, res) => {
   const trade = getTrade(req.params.id);
   if (!trade) return res.status(404).json({ error: "Trade not found" });
   if (trade.status === "open") return res.status(400).json({ error: "交易尚未結束" });
@@ -193,7 +211,7 @@ router.get("/api/trading/hypothesis", async (_req, res) => {
 
 // ── Pre-trade setup analysis (LLM) ───────────────────────────────────────────
 // Body: { pair, direction, entry, stop, target, entry_type, key_area, structure, session }
-router.post("/api/trading/analyze", async (req, res) => {
+router.post("/api/trading/analyze", requireAuth, async (req, res) => {
   const setup = req.body;
   if (!setup.pair || !setup.direction) {
     return res.status(400).json({ error: "必填：pair, direction" });
@@ -203,6 +221,28 @@ router.post("/api/trading/analyze", async (req, res) => {
   try {
     const analysis  = await analyzeSetup(setup);
     res.json({ ok: true, analysis, validation });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── News Calendar ─────────────────────────────────────────────────────────────
+// 今日 + 明日高影響力 USD 事件摘要
+router.get("/api/trading/news", requireAuth, async (_req, res) => {
+  try {
+    const summary = await getCalendarSummary();
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 未來 N 個高影響力事件
+router.get("/api/trading/news/upcoming", requireAuth, async (req, res) => {
+  const n = Math.min(Number(req.query.n) || 5, 20);
+  try {
+    const events = await getUpcomingEvents(n);
+    res.json({ events });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

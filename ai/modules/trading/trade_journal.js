@@ -192,11 +192,22 @@ function computeRR(data) {
 }
 
 function detectSession() {
+  // Market session hours in UTC:
+  //   Asia:     00:00–09:00
+  //   London:   07:00–16:00
+  //   New York: 13:00–22:00
+  // Overlaps are named explicitly for better strategy attribution.
   const hour = new Date().getUTCHours();
-  if (hour >= 0  && hour < 8)  return "asia";
-  if (hour >= 7  && hour < 16) return "london";
-  if (hour >= 13 && hour < 22) return "new_york";
-  return "unknown";
+  const inAsia   = hour >= 0  && hour < 9;
+  const inLondon = hour >= 7  && hour < 16;
+  const inNY     = hour >= 13 && hour < 22;
+
+  if (inLondon && inNY) return "london_ny";     // 13:00–16:00 UTC — highest volatility
+  if (inAsia && inLondon) return "asia_london"; // 07:00–09:00 UTC — London open
+  if (inNY)     return "new_york";
+  if (inLondon) return "london";
+  if (inAsia)   return "asia";
+  return "off_hours";
 }
 
 function outcomeStats(trades) {

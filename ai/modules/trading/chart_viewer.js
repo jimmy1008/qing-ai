@@ -27,11 +27,10 @@ async function openChart(pair = "BTC", interval = "60") {
   // Attempt TradingView login once per process if credentials exist and not yet attempted.
   // Close the login tab afterwards to keep only the chart tab visible.
   if (!_tvLoginAttempted && (process.env.GOOGLE_EMAIL || "").trim()) {
-    _tvLoginAttempted = true;
     try {
-      await ensureTradingViewLogin();
+      const ok = await ensureTradingViewLogin();
+      _tvLoginAttempted = !!ok; // only mark done if login actually succeeded
       // Close the "tradingview" login page — session is now stored in the Chrome profile.
-      // tv_BTC page will inherit the logged-in session.
       const ctx = await getContext();
       const pages = ctx.pages();
       for (const p of pages) {

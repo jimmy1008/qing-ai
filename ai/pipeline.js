@@ -2291,11 +2291,14 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
       }
     }
     try {
+      const _snapStart = Date.now();
       const [_btc, _eth] = await Promise.allSettled([fetchSnapshot("BTC"), fetchSnapshot("ETH")]);
+      const _elapsed = Math.round((Date.now() - _snapStart) / 1000);
+      const _ageText = _elapsed <= 5 ? "剛剛" : `${_elapsed}秒前`;
       const _lines = [];
       if (_btc.status === "fulfilled") { const s = _btc.value; _lines.push(`BTC/USDT 現價 ${s.price?.toLocaleString()} 24H ${s.change_pct}% RSI ${s.indicators?.rsi ?? "N/A"}`); }
       if (_eth.status === "fulfilled") { const s = _eth.value; _lines.push(`ETH/USDT 現價 ${s.price?.toLocaleString()} 24H ${s.change_pct}% RSI ${s.indicators?.rsi ?? "N/A"}`); }
-      if (_lines.length) context._tradingBlock = (context._tradingBlock ? context._tradingBlock + "\n" : "") + `（即時行情：${_lines.join("　")}）`;
+      if (_lines.length) context._tradingBlock = (context._tradingBlock ? context._tradingBlock + "\n" : "") + `（即時行情（${_ageText}）：${_lines.join("　")}）`;
     } catch {}
     try {
       const _sims = getOpenSimulatedTrades();

@@ -15,7 +15,7 @@
 const axios    = require("axios");
 const fs       = require("fs");
 const path     = require("path");
-const { fetchSnapshot, fetchMultiTF }    = require("./tv_datafeed");
+const { fetchSnapshot, fetchMultiTF, fetchFundingOI } = require("./tv_datafeed");
 const { analyzeMultiTF }                 = require("./dtfx_analyzer");
 
 const OLLAMA_URL = () => process.env.OLLAMA_URL || "http://localhost:11434";
@@ -58,9 +58,10 @@ async function observe(asset, opts = {}) {
   }
 
   // ── Step 1: Fetch data ──────────────────────────────────────────────────
-  const [snapshot, multiTF] = await Promise.all([
+  const [snapshot, multiTF, fundingOI] = await Promise.all([
     fetchSnapshot(A).catch(err => ({ error: err.message })),
     fetchMultiTF(A).catch(err => ({ error: err.message, data: {} })),
+    fetchFundingOI(A).catch(() => ({ funding_rate: null, open_interest: null })),
   ]);
 
   if (snapshot.error) throw new Error(`Snapshot failed: ${snapshot.error}`);
@@ -69,7 +70,7 @@ async function observe(asset, opts = {}) {
   const analysis = analyzeMultiTF(multiTF.data || {});
 
   // ── Step 3: Build structured observation report ─────────────────────────
-  const report = buildReport(A, snapshot, analysis, multiTF.errors || {});
+  const report = buildReport(A, snapshot, analysis, multiTF.errors || {}, fundingOI);
 
   // ── Step 4: LLM trade idea narrative ────────────────────────────────────
   if (!opts.noLLM) {
@@ -104,7 +105,7 @@ function getObservations(asset, n = 10) {
 
 // ── Build report ──────────────────────────────────────────────────────────────
 
-function buildReport(asset, snapshot, analysis, dataErrors) {
+function buildReport(asset, snapshot, analysis, dataErrors, fundingOI) {
   const conf = analysis.confluence || {};
   const h4   = analysis.timeframes?.["4H"] || {};
   const h1   = analysis.timeframes?.["1H"] || {};
@@ -148,6 +149,13 @@ function buildReport(asset, snapshot, analysis, dataErrors) {
     // Setup quality
     setup: h1.setup || null,
 
+    // Auxiliary market data (funding rate + OI)
+    auxiliary: {
+      funding_rate:  fundingOI?.funding_rate  ?? null,  // % (positive = longs pay shorts)
+      open_interest: fundingOI?.open_interest ?? null,  // in BTC/ETH units
+      mark_price:    fundingOI?.mark_price    ?? null,
+    },
+
     // Data quality flags
     data_errors: Object.keys(dataErrors).length ? dataErrors : null,
     trade_idea:  null,  // filled by LLM step
@@ -185,6 +193,8 @@ async function generateTradeIdea(report) {
 
   const rsi  = report.indicators?.rsi;
   const vol  = report.volume ? formatVolume(report.volume) : "N/A";
+  const fundingRate  = report.auxiliary?.funding_rate;
+  const openInterest = report.auxiliary?.open_interest;
 
   const prompt = [
     "你是晴，一個正在學習 DTFX 策略的 AI 交易研究員。用第一人稱口語中文，約 5–8 句。",
@@ -194,7 +204,7 @@ async function generateTradeIdea(report) {
     "",
     `【市場現況】`,
     `${report.asset}/USDT  當前價格：${price}  24H 變化：${change}%  成交量：${vol}`,
-    `RSI：${rsi ?? "N/A"}`,
+    `RSI：${rsi ?? "N/A"}  資金費率：${fundingRate != null ? fundingRate + "%" : "N/A"}  OI：${openInterest ?? "N/A"}`,
     "",
     `【多時間框架結構】`,
     `4H：${h4Trend}  |  1H：${h1Trend}  |  15M：${m15Trend}`,
@@ -219,9 +229,10 @@ async function generateTradeIdea(report) {
       think:  false,
       messages: [{ role: "user", content: prompt }],
     }, { timeout: 60000 });
-    return String(resp.data?.message?.content || "").trim() || null;
-  } catch {
-    return null;
+    return String(resp.data?.message?.content || "").trim() || "（市場分析暫無內容）";
+  } catch (err) {
+    console.warn("[market_observer] LLM trade idea failed:", err.message);
+    return `（市場分析生成失敗：${err.code || err.message}）`;
   }
 }
 

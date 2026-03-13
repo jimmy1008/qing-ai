@@ -131,9 +131,9 @@ async function ensureTradingViewLogin() {
   const page = await getPage("tradingview");
   await page.goto("https://www.tradingview.com/", { waitUntil: "domcontentloaded", timeout: 20000 });
 
-  // Check if already logged in — look for user avatar or account menu
-  const loggedIn = await page.locator('[data-name="header-user-menu-button"], .tv-header__user-menu-button').count().catch(() => 0);
-  if (loggedIn) {
+  // Check if already logged in — sign-in button absent = logged in
+  const signInCount = await page.locator('button:has-text("Sign in"), [data-name="header-user-menu-sign-in"]').count().catch(() => 0);
+  if (!signInCount) {
     console.log("[Chrome] TradingView already logged in");
     return true;
   }

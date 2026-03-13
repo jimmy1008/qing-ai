@@ -12,8 +12,9 @@
 
 const path = require("path");
 const fs   = require("fs");
-const { observe }               = require("./market_observer");
+const { observe }                                       = require("./market_observer");
 const { logTrade, updateTrade, getOpenSimulatedTrades } = require("./trade_journal");
+const { isNearHighImpactNews }                          = require("./news_calendar");
 
 // ── 常數 ──────────────────────────────────────────────────────────────────────
 
@@ -22,11 +23,15 @@ const ASSETS = ["BTC", "ETH"];
 const WINDOW_START = 8;    // 08:00 台灣
 const WINDOW_END   = 22;   // 22:00 台灣
 
-const EXPLORE_INTERVALS = [10, 15, 30, 60]; // 分鐘
-const DEFAULT_INTERVAL  = 30;
+const EXPLORE_INTERVALS   = [10, 15, 30, 60]; // 分鐘
+const DEFAULT_INTERVAL    = 30;
 const MIN_OBS_TO_OPTIMIZE = 30;
-const SETUP_THRESHOLD   = 60;  // 分數門檻
-const MIN_RR            = 1.5; // 最低 R:R 才建倉
+const SETUP_THRESHOLD     = 60;   // 分數門檻
+const MIN_RR              = 1.5;  // 最低 R:R 才建倉
+const MAX_POSITIONS       = 2;    // 最多同時持有倉位（含所有幣種）
+const SIM_ACCOUNT_SIZE    = 10000; // 模擬帳戶規模（USD）
+const MAX_RISK_PCT        = 0.01;  // 每筆最大風險 1%
+const NEWS_WINDOW_MIN     = 30;   // 重大消息前後 30 分鐘不建倉
 
 const RHYTHM_FILE  = path.join(__dirname, "../../../memory/trades/rhythm.json");
 const SETUPS_FILE  = path.join(__dirname, "../../../memory/trades/active_setups.json");
@@ -226,20 +231,38 @@ function monitorSimTrades(asset, price) {
 }
 
 /**
- * 自動建立模擬倉位（每資產最多 1 筆開倉）
+ * 自動建立模擬倉位
+ * 風控：每資產 1 筆、全局最多 MAX_POSITIONS、RR ≥ MIN_RR、1% 最大風險
+ * 新聞：重大消息前後 NEWS_WINDOW_MIN 分鐘內不建倉
  */
-function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score, grade, bestTf, tradeIdea) {
+async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score, grade, bestTf, tradeIdea) {
   const pair = `${asset}USDT`;
 
-  // 若已有開放中的模擬倉位 → 不重複建倉
-  const alreadyOpen = getOpenSimulatedTrades().some(t => t.pair === pair);
-  if (alreadyOpen) {
+  // 每資產最多 1 筆開倉
+  const openSims = getOpenSimulatedTrades();
+  if (openSims.some(t => t.pair === pair)) {
     console.log(`[scheduler] sim: ${pair} already has open position, skipping.`);
+    return null;
+  }
+
+  // 全局最多 MAX_POSITIONS 筆
+  if (openSims.length >= MAX_POSITIONS) {
+    console.log(`[scheduler] sim: max positions (${MAX_POSITIONS}) reached, skipping ${pair}.`);
     return null;
   }
 
   // 方向不明確 → 不建倉
   if (!bias || bias === "neutral") return null;
+
+  // 重大消息前後不建倉
+  try {
+    const { near, events } = await isNearHighImpactNews(NEWS_WINDOW_MIN);
+    if (near) {
+      const titles = events.map(e => e.title).join(", ");
+      console.log(`[scheduler] sim: near high-impact news (${titles}), skipping ${pair}.`);
+      return null;
+    }
+  } catch { /* 行事曆抓取失敗不阻止建倉 */ }
 
   const levels = calcSimLevels(price, bias, keyLevels);
   if (levels.rr < MIN_RR) {
@@ -247,11 +270,16 @@ function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score, grade
     return null;
   }
 
+  // 1% 帳戶風控計算
+  const maxRiskUSD  = SIM_ACCOUNT_SIZE * MAX_RISK_PCT;   // $100
+  const riskPerUnit = Math.abs(levels.entry - levels.stop);
+  const positionSizeUSD = riskPerUnit > 0 ? maxRiskUSD / (riskPerUnit / levels.entry) : maxRiskUSD;
+
   // 判斷 key_area：優先用 OB，其次 FVG，最後預設結構
   const obs  = keyLevels?.order_blocks || [];
   const fvgs = keyLevels?.fvgs || [];
   let key_area = "structure";
-  if (obs.length > 0)  key_area = "OB";
+  if (obs.length > 0)       key_area = "OB";
   else if (fvgs.length > 0) key_area = "FVG";
 
   // 取 h1 結構描述
@@ -270,11 +298,17 @@ function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score, grade
     structure:  structDesc,
     session:    undefined, // auto-detect by trade_journal
     reason:     `Auto: score=${score} grade=${grade} bias=${bias}. ${tradeIdea ? tradeIdea.slice(0, 120) + "…" : ""}`,
+    auxiliary: {
+      sim_account_size: SIM_ACCOUNT_SIZE,
+      position_size_usd: Number(positionSizeUSD.toFixed(2)),
+      risk_usd: Number(maxRiskUSD.toFixed(2)),
+      risk_pct: (MAX_RISK_PCT * 100).toFixed(1) + "%",
+    },
     simulated:  true,
     sim_status: "watching",
   });
 
-  console.log(`[scheduler] sim trade OPENED: ${pair} ${levels.direction} entry=${levels.entry} stop=${levels.stop} target=${levels.target} RR=${levels.rr.toFixed(2)}`);
+  console.log(`[scheduler] sim trade OPENED: ${pair} ${levels.direction} entry=${levels.entry} stop=${levels.stop} target=${levels.target} RR=${levels.rr.toFixed(2)} size=$${positionSizeUSD.toFixed(0)}`);
   return trade;
 }
 
@@ -334,7 +368,7 @@ async function runObservationCycle() {
           saveActiveSetups();
 
           // ── Step 4b: 自動建立模擬倉位 ──────────────────────────────────
-          autoOpenSimTrade(
+          await autoOpenSimTrade(
             asset, full.price, bias,
             full.key_levels, full.structure,
             score, grade, bestTf, tradeIdea
@@ -345,7 +379,7 @@ async function runObservationCycle() {
           _activeSetups.unshift({ ...entry, trade_idea: null, observed_at: Date.now() });
           if (_activeSetups.length > 10) _activeSetups.splice(10);
           saveActiveSetups();
-          autoOpenSimTrade(asset, price, bias, quick.key_levels, quick.structure, score, grade, bestTf, null);
+          await autoOpenSimTrade(asset, price, bias, quick.key_levels, quick.structure, score, grade, bestTf, null);
         }
       } else {
         // ── Step 4c: 無 setup — 靜默觀察 ──────────────────────────────
@@ -408,4 +442,12 @@ function getSchedulerStatus() {
 
 function getActiveSetups() { return _activeSetups; }
 
-module.exports = { startScheduler, stopScheduler, getSchedulerStatus, getActiveSetups };
+/**
+ * 快速查詢今日高影響力財經事件（供 dashboard 顯示）
+ */
+async function getNewsStatus() {
+  const { getCalendarSummary } = require("./news_calendar");
+  return getCalendarSummary().catch(() => ({ count: 0, events: [], error: "fetch failed" }));
+}
+
+module.exports = { startScheduler, stopScheduler, getSchedulerStatus, getActiveSetups, getNewsStatus };
