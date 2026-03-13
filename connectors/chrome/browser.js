@@ -158,8 +158,18 @@ async function ensureTradingViewLogin() {
     if (await accountRow.count()) {
       await accountRow.click();
     } else {
-      // Manual email/password if no account chooser
-      await ensureGoogleLogin();
+      // Google shows sign-in form — fill credentials directly in the popup
+      try {
+        await popup.waitForSelector('input[type="email"]', { timeout: 8000 });
+        await popup.fill('input[type="email"]', process.env.GOOGLE_EMAIL || "");
+        await popup.click('#identifierNext, [jsname="LgbsSe"]');
+        await popup.waitForSelector('input[type="password"]', { timeout: 8000 });
+        await popup.fill('input[type="password"]', process.env.GOOGLE_PASSWORD || "");
+        await popup.click('#passwordNext, [jsname="LgbsSe"]');
+        console.log("[Chrome] Filled Google credentials in TV OAuth popup");
+      } catch (e) {
+        console.warn("[Chrome] Could not auto-fill Google popup:", e.message);
+      }
     }
 
     await popup.waitForEvent("close", { timeout: 20000 }).catch(() => {});

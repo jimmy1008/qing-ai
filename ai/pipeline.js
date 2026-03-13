@@ -2697,7 +2697,7 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
   // Local LLMs have strong recency bias — inject trading block again right before model output.
   // This is the most salient position (after conversation history, just before generation).
   const effectiveUserPrompt = context._tradingBlock
-    ? userPrompt + `\n\n[即時系統通知] ${context._tradingBlock} ← 這是剛才發生的真實事件。用第一人稱自然說出來，例如「剛打開了...」「看了一下...」。`
+    ? userPrompt + `\n\n[即時系統通知] ${context._tradingBlock} ← 這是你自己剛看到的，可以隨口帶一句，不需要像報告一樣逐一列出數字。`
     : userPrompt;
   const finalPrompt = `${systemPrompt}\n\n${effectiveUserPrompt}`;
   const promptTokenEstimate = estimatePromptTokens(finalPrompt);

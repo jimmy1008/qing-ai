@@ -42,7 +42,7 @@ function findEvalReports() {
 
 const router = express.Router();
 
-router.get("/api/pipeline/status", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/pipeline/status", requireAuth, (_req, res) => {
   const adapters = getAdapterDirs();
   const latest = adapters[0];
   if (!latest) return res.json({ status: "no_adapters", uploadedSamples: 0 });
@@ -62,7 +62,7 @@ router.get("/api/pipeline/status", requireAuth, requireSuperAdmin, (_req, res) =
   });
 });
 
-router.get("/api/dataset/files", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/dataset/files", requireAuth, (_req, res) => {
   const audit = safeReadJson(path.join(TRAIN_DIR, "dataset_audit.json")) || {};
   const files = [];
   if (fs.existsSync(TRAIN_DIR)) {
@@ -81,7 +81,7 @@ router.get("/api/dataset/files", requireAuth, requireSuperAdmin, (_req, res) => 
   res.json(files);
 });
 
-router.get("/api/dataset/validation", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/dataset/validation", requireAuth, (_req, res) => {
   const audit = safeReadJson(path.join(TRAIN_DIR, "dataset_audit.json")) || {};
   const trainAudit = audit.train_audit || {};
   res.json({
@@ -92,7 +92,7 @@ router.get("/api/dataset/validation", requireAuth, requireSuperAdmin, (_req, res
   });
 });
 
-router.get("/api/scoring/a/status", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/scoring/a/status", requireAuth, (_req, res) => {
   const reports = findEvalReports();
   if (!reports.length) return res.json({ avgScore: 0, reviewed: 0, coverage: "0%", personaConsistency: "—", completed: false, total: 0 });
   const latest = reports[0].data;
@@ -107,7 +107,7 @@ router.get("/api/scoring/a/status", requireAuth, requireSuperAdmin, (_req, res) 
   });
 });
 
-router.get("/api/scoring/b/status", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/scoring/b/status", requireAuth, (_req, res) => {
   res.json({ preferenceSamples: 0, chosenRejectedRatio: "—", gateStatus: "未配置", mode: "DPO", processed: 0, total: 0, canStart: false, message: "尚未配置偏好學習資料集" });
 });
 

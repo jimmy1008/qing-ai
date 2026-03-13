@@ -93,7 +93,7 @@ router.post("/api/review/a/generate", requireAuth, requireSuperAdmin, async (req
   res.json({ ok: true, total: prompts.length, alreadyDone: resumeSet.size, remaining: prompts.length - resumeSet.size, concurrency });
 });
 
-router.get("/api/review/a/generate/status", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/review/a/generate/status", requireAuth, (_req, res) => {
   let fileCount = 0;
   if (fs.existsSync(INFER_RESULTS_PATH)) {
     fileCount = fs.readFileSync(INFER_RESULTS_PATH, "utf-8").trim().split("\n").filter(Boolean).length;
@@ -192,7 +192,7 @@ router.post("/api/review/a/init", requireAuth, requireSuperAdmin, (req, res) => 
   res.json({ ok: true, total: items.length, source: "training" });
 });
 
-router.get("/api/review/a/progress", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/review/a/progress", requireAuth, (_req, res) => {
   const state = readReview(REVIEW_A_PATH);
   if (!state) return res.json({ initialized: false, total: 0, done: 0, pending: 0, scores: {} });
   const items = state.items;
@@ -207,7 +207,7 @@ router.get("/api/review/a/progress", requireAuth, requireSuperAdmin, (_req, res)
   });
 });
 
-router.get("/api/review/a/next", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/review/a/next", requireAuth, (_req, res) => {
   const state = readReview(REVIEW_A_PATH);
   if (!state) return res.status(404).json({ ok: false, message: "尚未初始化" });
   const item = state.items.find(x => x.status === "pending");
@@ -216,7 +216,7 @@ router.get("/api/review/a/next", requireAuth, requireSuperAdmin, (_req, res) => 
   res.json({ item, done, total: state.items.length, adapter: state.adapter });
 });
 
-router.post("/api/review/a/submit", requireAuth, requireSuperAdmin, (req, res) => {
+router.post("/api/review/a/submit", requireAuth, (req, res) => {
   const { id, score, note } = req.body || {};
   const s = Number(score);
   if (!id || !s || s < 1 || s > 5) return res.status(400).json({ ok: false, message: "id and score (1-5) required" });
@@ -259,7 +259,7 @@ router.post("/api/review/b/init", requireAuth, requireSuperAdmin, (_req, res) =>
   res.json({ ok: true, total: pairs.length, labelA: state.labelA, labelB: state.labelB });
 });
 
-router.get("/api/review/b/progress", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/review/b/progress", requireAuth, (_req, res) => {
   const state = readReview(REVIEW_B_PATH);
   if (!state) return res.json({ initialized: false, total: 0, done: 0 });
   const items = state.items;
@@ -274,7 +274,7 @@ router.get("/api/review/b/progress", requireAuth, requireSuperAdmin, (_req, res)
   });
 });
 
-router.get("/api/review/b/next", requireAuth, requireSuperAdmin, (_req, res) => {
+router.get("/api/review/b/next", requireAuth, (_req, res) => {
   const state = readReview(REVIEW_B_PATH);
   if (!state) return res.status(404).json({ ok: false, message: "尚未初始化" });
   const item = state.items.find(x => x.status === "pending");
@@ -283,7 +283,7 @@ router.get("/api/review/b/next", requireAuth, requireSuperAdmin, (_req, res) => 
   res.json({ pair: item, done, total: state.items.length, labelA: state.labelA, labelB: state.labelB });
 });
 
-router.post("/api/review/b/submit", requireAuth, requireSuperAdmin, (req, res) => {
+router.post("/api/review/b/submit", requireAuth, (req, res) => {
   const { id, preference } = req.body || {};
   if (!id || !preference) return res.status(400).json({ ok: false, message: "id and preference required" });
   const state = readReview(REVIEW_B_PATH);
