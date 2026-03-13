@@ -117,6 +117,8 @@ function buildReport(asset, snapshot, analysis, dataErrors, fundingOI) {
   return {
     asset,
     price:       snapshot.price,
+    high:        snapshot.high  ?? snapshot.price,
+    low:         snapshot.low   ?? snapshot.price,
     change_pct:  snapshot.change_pct,
     volume:      snapshot.volume,
     indicators:  snapshot.indicators,
@@ -143,6 +145,9 @@ function buildReport(asset, snapshot, analysis, dataErrors, fundingOI) {
       order_blocks: [...(h1.order_blocks || []), ...(m15.order_blocks || [])].slice(-3),
       fvgs:         [...(h1.fvgs || []), ...(m15.fvgs || [])].slice(-3),
       liquidity:    h1.liquidity || null,
+      // Swing S/R pivots from 1H structure (for chart annotation)
+      swing_highs:  (h1.structure?.recent_highs || []).map(h => ({ price: h.price, time: h.time })),
+      swing_lows:   (h1.structure?.recent_lows  || []).map(l => ({ price: l.price, time: l.time })),
     },
 
     // Latest structural events
@@ -232,7 +237,7 @@ async function generateTradeIdea(report) {
       stream: false,
       think:  false,
       messages: [{ role: "user", content: prompt }],
-    }, { timeout: 60000 }), 3);
+    }, { timeout: 60000 }), 3, "background");
     return String(resp.data?.message?.content || "").trim() || "（市場分析暫無內容）";
   } catch (err) {
     console.warn("[market_observer] LLM trade idea failed:", err.message);

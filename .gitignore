@@ -46,3 +46,6 @@ connectors/chrome/chrome_profile/
 # ── Telemetry 執行期資料 ──
 telemetry/backups/
 telemetry/ai_state_history.jsonl
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat

@@ -72,7 +72,7 @@ async function generateGroupRemark(recentMessages, mood, ollamaClient) {
   const TIMEOUT_MS = 20000;
   try {
     const raw = await Promise.race([
-      ollamaClient.generate({
+      (ollamaClient.generateFast || ollamaClient.generate)({
         system: systemPrompt,
         prompt,
         options: { temperature: 0.78, num_predict: 80 },
@@ -196,7 +196,7 @@ async function generateDmRemark(user, identityMemory, mood, ollamaClient) {
   const TIMEOUT_MS = 20000;
   try {
     const raw = await Promise.race([
-      ollamaClient.generate({
+      (ollamaClient.generateFast || ollamaClient.generate)({
         system: systemPrompt,
         prompt,
         options: { temperature: 0.75, num_predict: 80 },
