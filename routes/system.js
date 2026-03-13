@@ -11,6 +11,8 @@ const { evaluateAlerts } = require("../metrics/alert_rules");
 const historyBuffer = require("../metrics/history_buffer");
 const { getQueueStats } = require("../ai/moderation_queue");
 const { getAISnapshot, getAIThoughtsSnapshot } = require("../ai/state_snapshot");
+const { getLLMQueueStats } = require("../ai/llm_queue");
+const { getStats: getWorkingMemoryStats } = require("../ai/memory/working_memory");
 const fs = require("fs");
 const path = require("path");
 
@@ -70,6 +72,12 @@ module.exports = function createSystemRouter({ startTime, connectorLogPath, acti
   const router = express.Router();
 
   router.get("/api/me",              requireAuth,                   (req, res) => res.json({ role: req.userRole }));
+  // LLM queue live stats — visible to all auth'd users (no sensitive data)
+  router.get("/api/status/llm-queue", requireAuth, (_req, res) => {
+    const q = getLLMQueueStats();
+    const wm = getWorkingMemoryStats();
+    res.json({ llm_queue: q, working_memory: wm, timestamp: Date.now() });
+  });
   router.get("/api/metrics",         requireAuth, requireSuperAdmin, (_req, res) => res.json(buildMetricsPayload()));
   router.get("/api/analysis-summary",requireAuth,                   (_req, res) => res.json(buildAnalysisSummary()));
   router.get("/api/ai-cognition",    requireAuth, requireSuperAdmin, (_req, res) => res.json(getAISnapshot()));

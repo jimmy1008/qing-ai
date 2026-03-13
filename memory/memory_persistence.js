@@ -112,4 +112,19 @@ function load() {
   return map;
 }
 
-module.exports = { save, saveKey, load, MEMORY_DIR, LEGACY_PATH };
+/**
+ * Load a single key from disk (for lazy loading in memory_store).
+ * Returns the parsed object, or null if the file doesn't exist.
+ */
+function loadKey(key) {
+  const fp = userFilePath(key);
+  if (!fs.existsSync(fp)) return null;
+  try {
+    const raw = fs.readFileSync(fp, "utf-8").trim();
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { save, saveKey, loadKey, load, MEMORY_DIR, LEGACY_PATH };

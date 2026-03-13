@@ -20,6 +20,7 @@
 // }
 
 const axios = require("axios");
+const { enqueueLLM } = require("../llm_queue");
 const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE } = require("../persona_core");
 
 // Emoji unicode range regex (covers most common emoji)
@@ -140,10 +141,11 @@ async function rewriteWithGuidance(draftResult, judgeResult, contextPacket, inte
   ].join("\n");
 
   try {
-    const resp = await axios.post(`${ollamaUrl}/api/chat`, {
+    // priority 1 — repair is part of the main response path
+    const resp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/chat`, {
       model, stream: false, think: false,
       messages: [{ role: "user", content: prompt }],
-    }, { timeout: 45000 });
+    }, { timeout: 45000 }), 1);
 
     const fixed = String(resp.data?.message?.content || "").trim();
     if (fixed && fixed.length > 2) {
@@ -184,13 +186,13 @@ async function regenerateFresh(judgeResult, contextPacket, intentResult, referen
   ].join("\n");
 
   try {
-    const resp = await axios.post(`${ollamaUrl}/api/chat`, {
+    const resp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/chat`, {
       model, stream: false, think: false,
       messages: [
         { role: "system", content: sysPrompt },
         { role: "user",   content: contextPacket.current_message.text },
       ],
-    }, { timeout: 45000 });
+    }, { timeout: 45000 }), 1);
 
     const fixed = String(resp.data?.message?.content || "").trim();
     if (fixed && fixed.length > 2) {

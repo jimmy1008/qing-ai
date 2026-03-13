@@ -19,6 +19,7 @@
 // }
 
 const axios = require("axios");
+const { enqueueLLM } = require("../llm_queue");
 
 // ── Fast rule patterns ────────────────────────────────────────────────────────
 const SOCIAL_RE    = /^[\s]*(哈+|呵+|嗯+|好+|是+|對+|啊+|喔+|kkk*|ok+|好的|了解|知道了|收到|lol|xd|哦|噢|嗯啊|嗯哦)[\s!！.。]*$/iu;
@@ -75,10 +76,11 @@ intent 只選一個：chat, question, tease, challenge, emotional, task_request,
 {"intent":"","sub_intent":"","emotion":"","needs_memory":false,"needs_identity_check":false,"ambiguity_score":0.5,"risk_flags":[],"response_difficulty":"medium","routing_level":1}`;
 
   try {
-    const resp = await axios.post(`${ollamaUrl}/api/chat`, {
+    // priority 2 — needed for routing, yields only to active reply generation (1)
+    const resp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/chat`, {
       model, stream: false, think: false,
       messages: [{ role: "user", content: prompt }],
-    }, { timeout: 15000 });
+    }, { timeout: 15000 }), 2);
 
     const raw   = String(resp.data?.message?.content || "");
     const match = raw.match(/\{[\s\S]*?\}/);

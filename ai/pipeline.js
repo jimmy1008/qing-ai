@@ -2131,7 +2131,8 @@ function flattenQuestions(text = "") {
     .trim();
 }
 
-const PROMPT_WARN_TOKEN_THRESHOLD = Number(process.env.PROMPT_WARN_TOKEN_THRESHOLD || 3500);
+// qwen3:8b supports 32k context; 4500 is ~14% utilisation — still conservative.
+const PROMPT_WARN_TOKEN_THRESHOLD = Number(process.env.PROMPT_WARN_TOKEN_THRESHOLD || 4500);
 
 function estimatePromptTokens(text = "") {
   const chars = String(text || "").length;

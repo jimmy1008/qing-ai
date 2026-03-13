@@ -14,6 +14,7 @@
 // }
 
 const axios = require("axios");
+const { enqueueLLM } = require("../llm_queue");
 const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE, STYLE_CONTRACT } = require("../persona_core");
 
 async function generatePersonaReply(contextPacket, intentResult, referenceResult, selectedMemories = []) {
@@ -23,13 +24,14 @@ async function generatePersonaReply(contextPacket, intentResult, referenceResult
   const systemPrompt = buildSystemPrompt(contextPacket.scene, intentResult, referenceResult);
   const userPrompt   = buildUserPrompt(contextPacket, referenceResult, selectedMemories);
 
-  const resp = await axios.post(`${ollamaUrl}/api/chat`, {
+  // priority 1 — main reply generation, same as conversation
+  const resp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/chat`, {
     model, stream: false, think: false,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user",   content: userPrompt   },
     ],
-  }, { timeout: 60000 });
+  }, { timeout: 60000 }), 1);
 
   const draft = String(resp.data?.message?.content || "").trim();
 
