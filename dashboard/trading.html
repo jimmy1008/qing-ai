@@ -224,6 +224,7 @@
     </div>
     <nav class="topbar-nav">
       <button class="btn" type="button" onclick="location.href='/'">← 控制台</button>
+      <button class="btn" type="button" onclick="location.href='/chart'">圖表分析</button>
       <button class="btn" type="button" onclick="observeMarket('BTC')">觀察 BTC</button>
       <button class="btn" type="button" onclick="observeMarket('ETH')">觀察 ETH</button>
       <button class="btn" type="button" onclick="loadReview()">週期回顧</button>
@@ -271,7 +272,10 @@
 
         <!-- Simulated stats -->
         <div class="panel">
-          <div class="panel-title" style="color:#c084fc;">模擬交易表現</div>
+          <div class="panel-title" style="color:#c084fc;display:flex;align-items:center;justify-content:space-between;">
+            模擬交易表現
+            <button class="btn" type="button" onclick="clearSimTrades()" style="font-size:11px;padding:2px 8px;color:#f87171;border-color:#7f1d1d;">清空模擬倉</button>
+          </div>
           <div class="stat-chips">
             <div class="stat-chip"><span class="sc-val" id="ssTotal" style="color:#c084fc;">-</span><span class="sc-lbl">模擬總計</span></div>
             <div class="stat-chip"><span class="sc-val" id="ssWinRate">-</span><span class="sc-lbl">勝率</span></div>
@@ -283,8 +287,8 @@
 
         <!-- Log trade form -->
         <div class="panel">
-          <div class="panel-title">記錄交易</div>
-          <div class="log-form" id="logForm">
+          <div class="panel-title" onclick="toggleSection('logForm','logArrow')" style="cursor:pointer;user-select:none;">記錄交易 <span id="logArrow" style="font-size:11px;color:#6b6f85;">▶</span></div>
+          <div class="log-form" id="logForm" style="display:none;">
             <div class="form-row">
               <label>交易對
                 <input id="fPair" type="text" placeholder="BTCUSDT" value="BTCUSDT">
@@ -356,9 +360,11 @@
 
         <!-- Analyze setup -->
         <div class="panel">
-          <div class="panel-title">入場前分析</div>
-          <button class="btn" type="button" onclick="analyzeCurrentSetup()">讓晴分析這個 Setup</button>
-          <div id="analyzeResult" class="ai-text" style="display:none;margin-top:10px;"></div>
+          <div class="panel-title" onclick="toggleSection('analyzePanel','analyzeArrow')" style="cursor:pointer;user-select:none;">入場前分析 <span id="analyzeArrow" style="font-size:11px;color:#6b6f85;">▶</span></div>
+          <div id="analyzePanel" style="display:none;">
+            <button class="btn" type="button" onclick="analyzeCurrentSetup()">讓晴分析這個 Setup</button>
+            <div id="analyzeResult" class="ai-text" style="display:none;margin-top:10px;"></div>
+          </div>
         </div>
       </div>
 
@@ -409,6 +415,24 @@
   </div>
 
   <script>
+  // ── Auth token ────────────────────────────────────────────────────────────
+  function getToken() {
+    const urlToken = new URLSearchParams(location.search).get('token');
+    if (urlToken) { localStorage.setItem('teamToken', urlToken); return urlToken; }
+    let t = localStorage.getItem('teamToken');
+    if (!t) {
+      t = prompt('請輸入 Team Token：') || '';
+      if (t) localStorage.setItem('teamToken', t);
+    }
+    return t;
+  }
+  const TEAM_TOKEN = getToken();
+
+  function apiFetch(url, opts = {}) {
+    const headers = Object.assign({ 'x-team-token': TEAM_TOKEN }, opts.headers || {});
+    return fetch(url, Object.assign({}, opts, { headers }));
+  }
+
   // ── State ──────────────────────────────────────────────────────────────────
   let trades = [];
   let simTrades = [];
@@ -427,7 +451,7 @@
   async function refreshSnapshots() {
     for (const asset of ['BTC','ETH']) {
       try {
-        const snap = await fetch(`/api/trading/observe/${asset}/quick`).then(r=>r.json());
+        const snap = await apiFetch(`/api/trading/observe/${asset}/quick`).then(r=>r.json());
         if (!snap.error) renderSnapshotCard(asset, snap);
       } catch {}
     }
@@ -438,7 +462,7 @@
     card.innerHTML = `<div style="color:#6b6f85;font-size:13px;">⏳ 正在觀察 ${asset}，拉取 TradingView 資料 + DTFX 分析中...</div>`;
     document.getElementById('observeStatus').textContent = `分析 ${asset} 中...`;
     try {
-      const res = await fetch(`/api/trading/observe/${asset}`).then(r=>r.json());
+      const res = await apiFetch(`/api/trading/observe/${asset}`).then(r=>r.json());
       if (res.error) { card.innerHTML = `<div style="color:#f87171;">${res.error}</div>`; return; }
       renderObservationCard(asset, res);
       document.getElementById('observeStatus').textContent =
@@ -613,7 +637,7 @@
         `台灣時間：${s.taiwan_time}`,
         `狀態：${s.is_weekend ? '週末休息' : s.in_window ? '看盤中' : '非看盤時間'}${s.next_window_min > 0 ? `（${s.next_window_min} 分鐘後）` : ''}`,
         `模式：${s.mode === 'learned' ? '已優化' : '探索中'}  間隔：${s.current_interval_min} 分鐘`,
-        `觀察：${s.observations_total} 次  Setup 命中率：${(s.setup_hit_rate * 100).toFixed(0)}%  開倉：${s.open_sim_trades} 筆`,
+        `觀察：${s.observations_total} 次  有結構比率：${(s.setup_hit_rate * 100).toFixed(0)}%（分數≥60）  開倉：${s.open_sim_trades} 筆`,
       ];
       document.getElementById('schedulerStatus').innerHTML = lines.join('<br>');
     } catch {}
@@ -666,6 +690,27 @@
     </div>`;
   }
 
+  // ── Clear simulated trades ────────────────────────────────────────────────
+  async function clearSimTrades() {
+    if (!confirm('清空所有模擬交易記錄？學習反思資料（reviews / hypotheses）會保留。')) return;
+    const res = await apiFetch('/api/trading/simulated/all', { method: 'DELETE' }).then(r => r.json());
+    if (res.ok) {
+      alert(`已清除 ${res.removed} 筆模擬交易。`);
+      loadData();
+    } else {
+      alert('清除失敗：' + (res.error || '未知錯誤'));
+    }
+  }
+
+  // ── Toggle collapsible panel ────────────────────────────────────────────────
+  function toggleSection(contentId, arrowId) {
+    const el = document.getElementById(contentId);
+    const arrow = document.getElementById(arrowId);
+    const expanded = el.style.display !== 'none';
+    el.style.display = expanded ? 'none' : 'block';
+    if (arrow) arrow.textContent = expanded ? '▶' : '▼';
+  }
+
   // ── Submit new trade ───────────────────────────────────────────────────────
   async function submitLog() {
     const body = {
@@ -684,7 +729,7 @@
     if (!body.pair || !body.entry || !body.stop || !body.target) {
       alert('請填入交易對、入場、止損、止盈'); return;
     }
-    const res = await fetch('/api/trading/log', {
+    const res = await apiFetch('/api/trading/log', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
     }).then(r=>r.json());
 
@@ -708,7 +753,7 @@
     const id      = document.getElementById('closeId').value;
     const outcome = document.getElementById('closeOutcome').value;
     const exit    = parseFloat(document.getElementById('closeExit').value) || null;
-    await fetch(`/api/trading/log/${id}`, {
+    await apiFetch(`/api/trading/log/${id}`, {
       method:'PATCH', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ status:'closed', result:{ outcome, exit_price: exit } }),
     });
@@ -720,7 +765,7 @@
   async function triggerReflect(id) {
     const card = event.target.closest('.trade-card');
     if (card) card.style.opacity = '0.5';
-    const res = await fetch(`/api/trading/reflect/${id}`, { method:'POST' }).then(r=>r.json());
+    const res = await apiFetch(`/api/trading/reflect/${id}`, { method:'POST' }).then(r=>r.json());
     loadData();
   }
 
@@ -762,7 +807,7 @@
     const el = document.getElementById('analyzeResult');
     el.style.display = 'block';
     el.textContent = '晴正在分析...';
-    const res = await fetch('/api/trading/analyze', {
+    const res = await apiFetch('/api/trading/analyze', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
     }).then(r=>r.json());
     el.textContent = res.analysis || res.error || '';

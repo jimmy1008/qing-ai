@@ -45,11 +45,63 @@ app.use(require("./routes/trading"));
 const { startScheduler } = require("./ai/modules/trading/trading_scheduler");
 
 app.get("/trading", (_req, res) => res.sendFile(path.join(__dirname, "dashboard", "trading.html")));
+app.get("/chart",   (_req, res) => res.sendFile(path.join(__dirname, "dashboard", "chart.html")));
+
+// ── Auto memory consolidation — runs daily at 04:00 Taiwan time ───────────────
+function scheduleMemoryConsolidation() {
+  const { consolidateEpisodes } = require("./ai/episodic_store");
+  const fs   = require("fs");
+  const path = require("path");
+  const EPISODES_DIR = path.join(__dirname, "memory/episodes");
+
+  function runConsolidation() {
+    try {
+      if (!fs.existsSync(EPISODES_DIR)) return;
+      const files = fs.readdirSync(EPISODES_DIR).filter(f => f.endsWith(".jsonl"));
+      let totalRemoved = 0, totalMerged = 0;
+      for (const f of files) {
+        const userKey = f.replace(".jsonl", "");
+        try {
+          const r = consolidateEpisodes(userKey);
+          totalRemoved += r.removed || 0;
+          totalMerged  += r.merged  || 0;
+        } catch { /* per-user errors are silent */ }
+      }
+      console.log(`[memory] daily consolidation: ${files.length} users, removed=${totalRemoved}, merged=${totalMerged}`);
+    } catch (e) {
+      console.warn("[memory] consolidation failed:", e.message);
+    }
+  }
+
+  // Schedule: run once daily. Calculate ms until next 04:00 Taipei (UTC+8).
+  function msUntilNext4am() {
+    const now = new Date();
+    const taipei = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+    const next = new Date(taipei);
+    next.setHours(4, 0, 0, 0);
+    if (next <= taipei) next.setDate(next.getDate() + 1);
+    return next - taipei;
+  }
+  setTimeout(function tick() {
+    runConsolidation();
+    setTimeout(tick, 24 * 60 * 60 * 1000);
+  }, msUntilNext4am());
+  console.log(`[memory] consolidation scheduled (next run in ${Math.round(msUntilNext4am()/3600000)}h)`);
+}
 
 // ── Start HTTP server ─────────────────────────────────────────────────────────
 const server = app.listen(PORT, () => {
   console.log(`SocialAI running at http://localhost:${PORT}`);
   startScheduler(); // 晴開始自主看盤排程
+  scheduleMemoryConsolidation();
+
+  // Pre-warm main model so first conversation request doesn't pay load cost
+  const axios = require("axios");
+  const _OLLAMA = process.env.OLLAMA_URL || "http://localhost:11434";
+  const _MODEL  = process.env.LLM_MODEL  || "qwen3:8b";
+  axios.post(`${_OLLAMA}/api/generate`, { model: _MODEL, prompt: "", stream: false, keep_alive: "1h" }, { timeout: 30000 })
+    .then(() => console.log(`[warmup] ${_MODEL} loaded into Ollama memory`))
+    .catch((e) => console.warn(`[warmup] model pre-warm failed: ${e.message}`));
 });
 
 // ─── Voice Chat WebSocket ─────────────────────────────────────────────────────

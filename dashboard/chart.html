@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>晴的圖表分析</title>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      height: 100vh; display: flex; flex-direction: column;
+      background: #0d1117; color: #c9d1d9;
+      font-family: 'Courier New', monospace; overflow: hidden;
+    }
+
+    /* ── Nav ── */
+    .cnav {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      padding: 6px 12px; background: #101821;
+      border-bottom: 1px solid #1b2531; flex-shrink: 0;
+    }
+    .cnav .sep { width: 1px; height: 18px; background: #2d3748; margin: 0 2px; }
+    .tbtn {
+      padding: 3px 9px; border: 1px solid #2d3748; border-radius: 5px;
+      background: #161c24; color: #8b9aaa; cursor: pointer;
+      font-size: 12px; font-family: inherit; transition: all .15s;
+    }
+    .tbtn:hover { border-color: #4b5563; color: #d1d5db; }
+    .tbtn.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+    .tbtn.active-asset { background: #1e3a5f; border-color: #3b82f6; color: #fff; font-weight: bold; }
+    .price-lg { font-size: 17px; font-weight: bold; color: #e2e8f0; margin-left: 4px; }
+    .chg { font-size: 12px; }
+    .sbadge {
+      padding: 2px 9px; border-radius: 10px; font-size: 11px;
+      font-weight: bold; margin-left: 4px;
+    }
+    .ml-auto { margin-left: auto; }
+
+    /* ── Main layout ── */
+    .cmain { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+    /* ── Chart area ── */
+    .cwrap { flex: 1; position: relative; overflow: hidden; min-width: 0; }
+    #lwc  { width: 100%; height: 100%; }
+    #zcanvas {
+      position: absolute; top: 0; left: 0;
+      pointer-events: none; z-index: 2;
+    }
+
+    /* ── Sidebar ── */
+    .cside {
+      width: 220px; flex-shrink: 0;
+      background: #101821; border-left: 1px solid #1b2531;
+      display: flex; flex-direction: column;
+      overflow-y: auto; padding: 10px; gap: 8px;
+    }
+    .sec-title {
+      font-size: 10px; color: #4b5563;
+      text-transform: uppercase; letter-spacing: .5px;
+      margin-bottom: 3px;
+    }
+
+    /* Decision box */
+    .dbox {
+      border-radius: 9px; padding: 10px 8px; text-align: center;
+      border: 1px solid #374151; background: rgba(75,85,99,.15);
+    }
+    .dbox.long  { background: rgba(34,197,94,.1);  border-color: rgba(34,197,94,.35); }
+    .dbox.short { background: rgba(239,68,68,.1);  border-color: rgba(239,68,68,.35); }
+    .dbox.watch { background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.3); }
+    .score-ring {
+      width: 52px; height: 52px; border-radius: 50%;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; margin: 0 auto 5px;
+      font-size: 18px; font-weight: bold;
+    }
+    .score-lbl { font-size: 10px; opacity: .7; }
+    .d-verdict { font-size: 12px; font-weight: bold; margin-top: 2px; }
+    .d-bias    { font-size: 11px; color: #6b7280; margin-top: 1px; }
+
+    /* Levels table */
+    .ltbl { width: 100%; font-size: 11px; border-collapse: collapse; }
+    .ltbl td { padding: 2px 0; }
+    .ltbl td:first-child { color: #6b7280; }
+    .ltbl td:last-child  { text-align: right; font-family: monospace; }
+
+    /* Signal list */
+    .slist { font-size: 11px; line-height: 1.6; }
+    .slist .sig  { color: #4ade80; }
+    .slist .warn { color: #fbbf24; }
+
+    /* Chips */
+    .chip {
+      display: inline-block; padding: 1px 5px; border-radius: 3px;
+      font-size: 10px; margin: 1px;
+    }
+    .chip.bull-ob  { background: rgba(34,197,94,.12);  color: #4ade80;  border: 1px solid rgba(34,197,94,.3); }
+    .chip.bear-ob  { background: rgba(239,68,68,.12);  color: #f87171;  border: 1px solid rgba(239,68,68,.3); }
+    .chip.bull-fvg { background: rgba(34,211,238,.1);  color: #22d3ee;  border: 1px solid rgba(34,211,238,.3); }
+    .chip.bear-fvg { background: rgba(251,146,60,.1);  color: #fb923c;  border: 1px solid rgba(251,146,60,.3); }
+    .chip.tf       { background: rgba(99,102,241,.1);  color: #a5b4fc;  border: 1px solid rgba(99,102,241,.3); }
+
+    /* TF bias row */
+    .tf-row { display: flex; gap: 3px; flex-wrap: wrap; }
+
+    /* Analyze btn */
+    .abtn {
+      width: 100%; padding: 7px; border: 1px solid #2d3748; border-radius: 7px;
+      background: #1a2030; color: #8b9aaa; cursor: pointer;
+      font-size: 11px; font-family: inherit;
+    }
+    .abtn:hover:not(:disabled) { border-color: #4b5563; color: #e2e8f0; }
+    .abtn:disabled { opacity: .5; cursor: default; }
+
+    /* AI text */
+    .ai-text {
+      font-size: 11px; color: #9ca3af; line-height: 1.65;
+      white-space: pre-wrap; word-break: break-all;
+    }
+
+    /* Status bar */
+    .sbar {
+      font-size: 10px; color: #4b5563; padding: 3px 12px;
+      background: #101821; border-top: 1px solid #1b2531;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="cnav">
+  <button class="tbtn active-asset" id="a-BTC" onclick="switchAsset('BTC')">BTC</button>
+  <button class="tbtn"              id="a-ETH" onclick="switchAsset('ETH')">ETH</button>
+  <div class="sep"></div>
+  <button class="tbtn"       id="tf-4H"  onclick="switchTF('4H')">4H</button>
+  <button class="tbtn active" id="tf-1H"  onclick="switchTF('1H')">1H</button>
+  <button class="tbtn"       id="tf-15M" onclick="switchTF('15M')">15M</button>
+  <button class="tbtn"       id="tf-5M"  onclick="switchTF('5M')">5M</button>
+  <div class="sep"></div>
+  <span  class="price-lg" id="n-price">—</span>
+  <span  class="chg"      id="n-chg"></span>
+  <span  class="sbadge"   id="n-badge">—</span>
+  <div class="ml-auto"></div>
+  <button class="tbtn" onclick="location.href='/trading'">← 交易日誌</button>
+  <button class="tbtn" id="btn-reload" onclick="loadAll(true)">刷新</button>
+</nav>
+
+<!-- Main -->
+<div class="cmain">
+  <!-- Chart -->
+  <div class="cwrap" id="cwrap">
+    <div id="lwc"></div>
+    <canvas id="zcanvas"></canvas>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="cside">
+
+    <!-- Decision -->
+    <div class="dbox" id="dbox">
+      <div class="score-ring" id="sring">
+        <span id="snum">—</span>
+        <span class="score-lbl" id="sgrade"></span>
+      </div>
+      <div class="d-verdict" id="dverdict">載入中...</div>
+      <div class="d-bias"    id="dbias"></div>
+    </div>
+
+    <!-- Entry levels -->
+    <div id="lvl-sec" style="display:none">
+      <div class="sec-title">建議水位</div>
+      <table class="ltbl">
+        <tr><td>入場</td><td id="l-entry" style="color:#94a3b8">—</td></tr>
+        <tr><td>止損 SL</td><td id="l-stop"  style="color:#f87171">—</td></tr>
+        <tr><td>止盈 TP</td><td id="l-tp"    style="color:#4ade80">—</td></tr>
+        <tr><td>RR</td>    <td id="l-rr"    style="color:#fbbf24">—</td></tr>
+      </table>
+    </div>
+
+    <!-- TF biases -->
+    <div>
+      <div class="sec-title">各時框方向</div>
+      <div class="tf-row" id="tf-biases">—</div>
+    </div>
+
+    <!-- Near zones -->
+    <div>
+      <div class="sec-title">附近區域</div>
+      <div id="near-zones">—</div>
+    </div>
+
+    <!-- Signals -->
+    <div>
+      <div class="sec-title">訊號</div>
+      <div class="slist" id="sig-list">—</div>
+    </div>
+
+    <!-- Liquidity -->
+    <div>
+      <div class="sec-title">流動性水位</div>
+      <div id="liq-list">—</div>
+    </div>
+
+    <!-- Indicators -->
+    <div>
+      <div class="sec-title">指標</div>
+      <div id="ind-list">—</div>
+    </div>
+
+    <!-- Analyze -->
+    <button class="abtn" id="btn-analyze" onclick="runFullAnalysis()">讓晴分析入場</button>
+    <div id="ai-sec" style="display:none">
+      <div class="sec-title">晴的看法</div>
+      <div class="ai-text" id="ai-txt"></div>
+    </div>
+
+    <div style="font-size:10px;color:#2d3748;margin-top:auto;padding-top:6px;" id="ts">—</div>
+  </div>
+</div>
+
+<!-- Status bar -->
+<div class="sbar" id="sbar">初始化中...</div>
+
+<script>
+// ── Auth ────────────────────────────────────────────────────────────────────
+(function initToken() {
+  const u = new URLSearchParams(location.search).get('token');
+  if (u) localStorage.setItem('teamToken', u);
+  if (!localStorage.getItem('teamToken')) {
+    const t = prompt('請輸入 Team Token：') || '';
+    if (t) localStorage.setItem('teamToken', t);
+  }
+})();
+function apiFetch(url, opts = {}) {
+  const h = Object.assign({ 'x-team-token': localStorage.getItem('teamToken') || '' }, opts.headers || {});
+  return fetch(url, Object.assign({}, opts, { headers: h }));
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+let chart, candles_, volSeries, plines = [], analysis = null, openTrades = [];
+let asset = 'BTC', tf = '1H', loading = false;
+
+// ── Chart init ───────────────────────────────────────────────────────────────
+function initChart() {
+  const el = document.getElementById('lwc');
+  chart = LightweightCharts.createChart(el, {
+    layout: {
+      background: { type: LightweightCharts.ColorType.Solid, color: '#0d1117' },
+      textColor: '#6b7280',
+    },
+    grid: { vertLines: { color: '#131b25' }, horzLines: { color: '#131b25' } },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+      vertLine: { color: '#2d3748', labelBackgroundColor: '#1f2937' },
+      horzLine: { color: '#2d3748', labelBackgroundColor: '#1f2937' },
+    },
+    rightPriceScale: { borderColor: '#1f2937' },
+    timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: false },
+  });
+
+  candles_ = chart.addCandlestickSeries({
+    upColor: '#26a69a', downColor: '#ef5350',
+    borderUpColor: '#26a69a', borderDownColor: '#ef5350',
+    wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+  });
+
+  volSeries = chart.addHistogramSeries({
+    color: '#26a69a33', priceFormat: { type: 'volume' }, priceScaleId: 'vol',
+  });
+  chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+
+  // Redraw zones on scroll/zoom
+  chart.timeScale().subscribeVisibleLogicalRangeChange(drawZones);
+
+  // Resize
+  const ro = new ResizeObserver(() => {
+    const w = document.getElementById('cwrap');
+    chart.applyOptions({ width: w.clientWidth, height: w.clientHeight });
+    syncCanvas(); drawZones();
+  });
+  ro.observe(document.getElementById('cwrap'));
+  const w = document.getElementById('cwrap');
+  chart.applyOptions({ width: w.clientWidth, height: w.clientHeight });
+}
+
+// ── Canvas overlay ───────────────────────────────────────────────────────────
+function syncCanvas() {
+  const cv = document.getElementById('zcanvas');
+  const w  = document.getElementById('cwrap');
+  cv.width  = w.clientWidth;
+  cv.height = w.clientHeight;
+}
+
+function drawZones() {
+  const cv  = document.getElementById('zcanvas');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!candles_) return;
+
+  const kl = analysis?.key_levels || {};
+  const { order_blocks = [], fvgs = [], swing_highs = [], swing_lows = [] } = kl;
+  const W = cv.width, H = cv.height;
+
+  function py(p) { return candles_.priceToCoordinate(p); }
+  function tx(ms) {
+    if (!ms) return null;
+    const c = chart.timeScale().timeToCoordinate(Math.floor(ms / 1000));
+    return (c == null || c < 0) ? 0 : c;
+  }
+
+  function box(x1raw, y1, y2, fill, stroke, lbl, lblClr, dash) {
+    if (y1 == null || y2 == null) return;
+    const x1 = x1raw == null ? 0 : x1raw;
+    const yT = Math.min(y1, y2), h = Math.abs(y2 - y1);
+    if (h < 1 || W - x1 <= 0) return;
+    ctx.fillStyle   = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth   = 1;
+    ctx.setLineDash(dash ? [4, 4] : []);
+    ctx.fillRect(x1, yT, W - x1, h);
+    ctx.strokeRect(x1, yT, W - x1, h);
+    ctx.setLineDash([]);
+    ctx.font      = 'bold 10px monospace';
+    ctx.fillStyle = lblClr;
+    ctx.fillText(lbl, x1 + 4, yT + 12);
+  }
+
+  function hline(price, color, dash, lbl) {
+    const y = py(price);
+    if (y == null || y < 0 || y > H) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1;
+    ctx.setLineDash(dash);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    ctx.setLineDash([]);
+    if (lbl) {
+      ctx.font      = '10px monospace';
+      ctx.fillStyle = color;
+      ctx.fillText(lbl + ' ' + price.toFixed(1), 4, y - 3);
+    }
+  }
+
+  // ── Swing Highs (Resistance) ──
+  for (const sh of swing_highs) {
+    hline(sh.price, 'rgba(239,68,68,0.55)', [5,4], 'R');
+  }
+
+  // ── Swing Lows (Support) ──
+  for (const sl of swing_lows) {
+    hline(sl.price, 'rgba(34,197,94,0.55)', [5,4], 'S');
+  }
+
+  // ── Order Blocks ──
+  for (const ob of order_blocks) {
+    const bull = ob.type === 'bullish_OB';
+    box(tx(ob.formed_at), py(ob.top), py(ob.bottom),
+      bull ? 'rgba(34,197,94,.13)'  : 'rgba(239,68,68,.13)',
+      bull ? 'rgba(34,197,94,.45)'  : 'rgba(239,68,68,.45)',
+      bull ? 'OB↑' : 'OB↓',
+      bull ? '#4ade80' : '#f87171', false);
+  }
+
+  // ── FVGs ──
+  for (const fvg of fvgs) {
+    const bull = fvg.type === 'bullish_FVG';
+    box(tx(fvg.formed_at), py(fvg.top), py(fvg.bottom),
+      bull ? 'rgba(34,211,238,.08)' : 'rgba(251,146,60,.08)',
+      bull ? 'rgba(34,211,238,.35)' : 'rgba(251,146,60,.35)',
+      bull ? 'FVG↑' : 'FVG↓',
+      bull ? '#22d3ee' : '#fb923c', true);
+  }
+
+  // ── Open sim trades for this asset ──
+  const pair = asset + 'USDT';
+  for (const t of openTrades.filter(t => t.pair === pair)) {
+    const isL = t.direction === 'long';
+    // Entry line
+    hline(t.entry, isL ? 'rgba(74,222,128,0.8)' : 'rgba(248,113,113,0.8)', [3,3],
+      isL ? '▲入場' : '▼入場');
+    // SL
+    hline(t.stop,   'rgba(248,113,113,0.7)', [2,3], 'SL');
+    // TP
+    hline(t.target, 'rgba(74,222,128,0.7)',  [2,3], 'TP');
+    // Risk band (fill between entry and stop)
+    const yE = py(t.entry), yS = py(t.stop);
+    if (yE != null && yS != null) {
+      ctx.fillStyle = isL ? 'rgba(248,113,113,0.05)' : 'rgba(74,222,128,0.05)';
+      ctx.fillRect(0, Math.min(yE, yS), W, Math.abs(yE - yS));
+    }
+  }
+}
+
+// ── Load data ────────────────────────────────────────────────────────────────
+async function loadAll(manual = false) {
+  if (loading) return;
+  loading = true;
+  setStatus('載入中...');
+  document.getElementById('btn-reload').textContent = '...';
+
+  try {
+    const [cr, ar, jr] = await Promise.all([
+      apiFetch(`/api/trading/candles/${asset}?tf=${tf}&bars=150`).then(r => r.json()),
+      apiFetch(`/api/trading/observe/${asset}?no_llm=1`).then(r => r.json()),
+      apiFetch(`/api/trading/journal`).then(r => r.json()).catch(() => ({ trades: [] })),
+    ]);
+
+    if (cr.error) throw new Error(cr.error);
+    analysis = ar;
+    openTrades = (jr.trades || []).filter(t => t.status === 'open' && t.simulated);
+
+    // Candle data
+    const lwcData = (cr.candles || [])
+      .map(c => ({ time: Math.floor(c.time / 1000), open: c.open, high: c.high, low: c.low, close: c.close }))
+      .sort((a, b) => a.time - b.time);
+
+    const volData = (cr.candles || [])
+      .map(c => ({ time: Math.floor(c.time / 1000), value: c.volume || 0,
+        color: c.close >= c.open ? '#26a69a28' : '#ef535028' }))
+      .sort((a, b) => a.time - b.time);
+
+    candles_.setData(lwcData);
+    volSeries.setData(volData);
+
+    // Clear old price lines
+    plines.forEach(pl => { try { candles_.removePriceLine(pl); } catch {} });
+    plines = [];
+
+    // Liquidity lines
+    const liq = analysis.key_levels?.liquidity || {};
+    (liq.bsl || []).forEach(b => plines.push(candles_.createPriceLine({
+      price: +b.level, color: '#3b82f6', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'BSL',
+    })));
+    (liq.ssl || []).forEach(s => plines.push(candles_.createPriceLine({
+      price: +s.level, color: '#f97316', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'SSL',
+    })));
+    if (liq.equilibrium) plines.push(candles_.createPriceLine({
+      price: +liq.equilibrium, color: '#374151', lineWidth: 1, lineStyle: 4, axisLabelVisible: false, title: 'EQ',
+    }));
+
+    // Entry / SL / TP lines
+    const lvls = calcLevels(analysis);
+    if (lvls) {
+      const iL = lvls.direction === 'long';
+      plines.push(candles_.createPriceLine({ price: lvls.entry, color: iL ? '#4ade80' : '#f87171', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: iL ? '入場 L' : '入場 S' }));
+      plines.push(candles_.createPriceLine({ price: lvls.stop,  color: '#f87171', lineWidth: 1, lineStyle: 2, axisLabelVisible: true,  title: 'SL' }));
+      plines.push(candles_.createPriceLine({ price: lvls.target, color: '#4ade80', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'TP' }));
+    }
+
+    // BOS / CHoCH markers
+    const markers = [];
+    const bos = analysis.latest_bos;
+    if (bos?.time) markers.push({
+      time: Math.floor(bos.time / 1000),
+      position: bos.type?.includes('bullish') ? 'belowBar' : 'aboveBar',
+      color: bos.type?.includes('bullish') ? '#4ade80' : '#f87171',
+      shape: 'arrowUp', text: 'BOS', size: 1,
+    });
+    const choch = analysis.latest_choch;
+    if (choch?.time) markers.push({
+      time: Math.floor(choch.time / 1000),
+      position: choch.type?.includes('bullish') ? 'belowBar' : 'aboveBar',
+      color: choch.type?.includes('bullish') ? '#22d3ee' : '#fb923c',
+      shape: 'circle', text: 'CHoCH', size: 1,
+    });
+    if (markers.length) candles_.setMarkers(markers.sort((a, b) => a.time - b.time));
+
+    renderSidebar(lvls);
+    syncCanvas();
+    drawZones();
+
+    const src = cr.candles?.[0]?.source || '?';
+    setStatus(`${asset}/${tf} · ${cr.bars} 根 · ${src} · 更新 ${new Date().toLocaleTimeString('zh-TW')}`);
+    document.getElementById('ts').textContent = `更新 ${new Date().toLocaleTimeString('zh-TW')}`;
+
+  } catch (e) {
+    setStatus('❌ ' + e.message);
+  } finally {
+    loading = false;
+    document.getElementById('btn-reload').textContent = '刷新';
+  }
+}
+
+// ── Entry level calc ─────────────────────────────────────────────────────────
+function calcLevels(a) {
+  const s = a?.setup;
+  if (!s || s.score < 60 || !s.bias || s.bias === 'neutral') return null;
+  const price = a.price;
+  const liq   = a.key_levels?.liquidity || {};
+  const ssls  = (liq.ssl || []).map(l => +l.level).filter(l => l < price).sort((x, y) => y - x);
+  const bsls  = (liq.bsl || []).map(l => +l.level).filter(l => l > price).sort((x, y) => x - y);
+  const isL   = s.bias.includes('long');
+  const stop  = isL ? (ssls[0] ?? price * 0.99) : (bsls[0] ?? price * 1.01);
+  const risk  = Math.abs(price - stop);
+  const target = isL ? (bsls[0] ?? price + risk * 2) : (ssls[0] ?? price - risk * 2);
+  const rr    = risk > 0 ? Math.abs(target - price) / risk : 0;
+  if (rr < 1.5) return null;
+  return { entry: price, stop, target, rr, direction: isL ? 'long' : 'short' };
+}
+
+// ── Sidebar render ───────────────────────────────────────────────────────────
+function renderSidebar(lvls) {
+  if (!analysis) return;
+  const setup = analysis.setup || {};
+  const score = setup.score ?? 0;
+  const grade = setup.grade || 'D';
+  const bias  = analysis.confluence?.overall_bias || setup.bias || 'neutral';
+
+  // Nav price
+  const chg = analysis.change_pct ?? 0;
+  document.getElementById('n-price').textContent = analysis.price?.toLocaleString() ?? '—';
+  const cel = document.getElementById('n-chg');
+  cel.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+  cel.style.color = chg >= 0 ? '#4ade80' : '#f87171';
+
+  // Nav badge
+  const nb = document.getElementById('n-badge');
+  nb.textContent = `${grade} ${score}`;
+  nb.style.background = sc(score, .18);
+  nb.style.color = sc(score, 1);
+  nb.style.border = `1px solid ${sc(score, .45)}`;
+
+  // Score ring
+  document.getElementById('sring').style.background = sc(score, .18);
+  document.getElementById('sring').style.border = `2px solid ${sc(score, .55)}`;
+  document.getElementById('snum').textContent = score;
+  document.getElementById('snum').style.color = sc(score, 1);
+  document.getElementById('sgrade').textContent = grade;
+
+  // Decision box
+  const box = document.getElementById('dbox');
+  const vrd = document.getElementById('dverdict');
+  box.className = 'dbox';
+  if (lvls) {
+    box.classList.add(lvls.direction);
+    vrd.style.color = lvls.direction === 'long' ? '#4ade80' : '#f87171';
+    vrd.textContent = lvls.direction === 'long' ? '可考慮做多 ↑' : '可考慮做空 ↓';
+  } else if (score >= 60) {
+    box.classList.add('watch');
+    vrd.style.color = '#fbbf24';
+    vrd.textContent = 'RR 不足，觀察';
+  } else {
+    vrd.style.color = '#6b7280';
+    vrd.textContent = '條件不足，等待';
+  }
+  document.getElementById('dbias').textContent = biasLabel(bias);
+
+  // Entry levels
+  const ls = document.getElementById('lvl-sec');
+  if (lvls) {
+    ls.style.display = 'block';
+    document.getElementById('l-entry').textContent = lvls.entry.toFixed(2);
+    document.getElementById('l-stop').textContent  = lvls.stop.toFixed(2);
+    document.getElementById('l-tp').textContent    = lvls.target.toFixed(2);
+    document.getElementById('l-rr').textContent    = lvls.rr.toFixed(2) + 'R';
+  } else {
+    ls.style.display = 'none';
+  }
+
+  // TF biases
+  const tfb = analysis.confluence?.tf_biases || {};
+  const tfScores = analysis.confluence?.tf_scores || {};
+  const tfHtml = ['4H','1H','15M','5M'].map(t => {
+    const b = tfb[t] || 'neutral';
+    const clr = b.includes('long') ? '#4ade80' : b.includes('short') ? '#f87171' : '#6b7280';
+    const sc2 = tfScores[t] != null ? ` ${tfScores[t]}` : '';
+    return `<span class="chip tf" style="color:${clr}">${t}${sc2}</span>`;
+  }).join('');
+  document.getElementById('tf-biases').innerHTML = tfHtml;
+
+  // Near zones
+  const nOBs = setup.near_ob || [], nFVGs = setup.near_fvg || [];
+  if (!nOBs.length && !nFVGs.length) {
+    document.getElementById('near-zones').innerHTML = '<span style="color:#374151">無附近區域</span>';
+  } else {
+    let h = '';
+    nOBs.forEach(o => {
+      const bull = o.type === 'bullish_OB';
+      h += `<span class="chip ${bull ? 'bull-ob' : 'bear-ob'}">${bull ? 'OB↑' : 'OB↓'} ${o.mid?.toFixed(1)}</span>`;
+    });
+    nFVGs.forEach(f => {
+      const bull = f.type === 'bullish_FVG';
+      h += `<span class="chip ${bull ? 'bull-fvg' : 'bear-fvg'}">${bull ? 'FVG↑' : 'FVG↓'} ${f.mid?.toFixed(1)}</span>`;
+    });
+    document.getElementById('near-zones').innerHTML = h;
+  }
+
+  // Signals
+  let sh = '';
+  (setup.signals  || []).forEach(s => sh += `<div class="sig">▲ ${s}</div>`);
+  (setup.warnings || []).forEach(w => sh += `<div class="warn">⚠ ${w}</div>`);
+  document.getElementById('sig-list').innerHTML = sh || '<span style="color:#374151">—</span>';
+
+  // Liquidity
+  const liq = analysis.key_levels?.liquidity || {};
+  let lh = '';
+  (liq.bsl || []).forEach(b => lh += `<table class="ltbl"><tr><td>BSL</td><td style="color:#60a5fa">${(+b.level).toFixed(2)}</td></tr></table>`);
+  (liq.ssl || []).forEach(s => lh += `<table class="ltbl"><tr><td>SSL</td><td style="color:#fb923c">${(+s.level).toFixed(2)}</td></tr></table>`);
+  if (liq.equilibrium) lh += `<table class="ltbl"><tr><td>EQ</td><td style="color:#4b5563">${(+liq.equilibrium).toFixed(2)}</td></tr></table>`;
+  document.getElementById('liq-list').innerHTML = lh || '<span style="color:#374151">—</span>';
+
+  // Indicators
+  const ind = analysis.indicators || {};
+  let ih = '';
+  if (ind.rsi != null) ih += `<table class="ltbl"><tr><td>RSI</td><td style="color:${ind.rsi > 70 ? '#f87171' : ind.rsi < 30 ? '#4ade80' : '#94a3b8'}">${ind.rsi.toFixed(1)}</td></tr></table>`;
+  if (ind.adx != null) ih += `<table class="ltbl"><tr><td>ADX</td><td style="color:#94a3b8">${ind.adx.toFixed(1)}</td></tr></table>`;
+  document.getElementById('ind-list').innerHTML = ih || '<span style="color:#374151">—</span>';
+}
+
+// ── Full analysis (LLM) ──────────────────────────────────────────────────────
+async function runFullAnalysis() {
+  const btn = document.getElementById('btn-analyze');
+  btn.textContent = '晴正在分析...';
+  btn.disabled = true;
+  try {
+    const res = await apiFetch(`/api/trading/observe/${asset}`).then(r => r.json());
+    document.getElementById('ai-txt').textContent = res.trade_idea || res.error || '—';
+    document.getElementById('ai-sec').style.display = 'block';
+    if (!res.error) { analysis = res; renderSidebar(calcLevels(res)); drawZones(); }
+  } catch (e) {
+    document.getElementById('ai-txt').textContent = '分析失敗：' + e.message;
+    document.getElementById('ai-sec').style.display = 'block';
+  } finally {
+    btn.textContent = '讓晴分析入場';
+    btn.disabled = false;
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function sc(score, a) {
+  if (score >= 70) return `rgba(34,197,94,${a})`;
+  if (score >= 60) return `rgba(251,191,36,${a})`;
+  if (score >= 40) return `rgba(251,146,60,${a})`;
+  return `rgba(107,114,128,${a})`;
+}
+
+function biasLabel(b) {
+  return { strong_long: '強勢多頭 ↑↑', lean_long: '偏多 ↑', neutral: '中性 →', lean_short: '偏空 ↓', strong_short: '強勢空頭 ↓↓' }[b] || b;
+}
+
+function switchAsset(a) {
+  asset = a;
+  ['BTC','ETH'].forEach(x => document.getElementById('a-'+x).className = 'tbtn' + (x===a ? ' active-asset' : ''));
+  document.getElementById('ai-sec').style.display = 'none';
+  candles_.setMarkers([]);
+  loadAll();
+}
+
+function switchTF(t) {
+  tf = t;
+  ['4H','1H','15M','5M'].forEach(x => document.getElementById('tf-'+x).className = 'tbtn' + (x===t ? ' active' : ''));
+  loadAll();
+}
+
+function setStatus(m) { document.getElementById('sbar').textContent = m; }
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+initChart();
+loadAll();
+setInterval(() => loadAll(), 60000);
+</script>
+</body>
+</html>

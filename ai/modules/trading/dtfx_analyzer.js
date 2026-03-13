@@ -135,8 +135,10 @@ function classifyStructure(swings) {
   return {
     trend,
     pattern,
-    last_high: recentHighs[recentHighs.length - 1] || null,
-    last_low:  recentLows[recentLows.length - 1]   || null,
+    last_high:      recentHighs[recentHighs.length - 1] || null,
+    last_low:       recentLows[recentLows.length - 1]   || null,
+    recent_highs:   recentHighs,   // [ { index, price, time }, ... ] last 3
+    recent_lows:    recentLows,    // [ { index, price, time }, ... ] last 3
   };
 }
 

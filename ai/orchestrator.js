@@ -53,9 +53,93 @@ const { judgeResponse }        = require("./modules/response_judge");
 const { maybeWriteMemory }     = require("./modules/memory_writer");
 const { repairReply }          = require("./modules/repair_rewriter");
 const { makeSessionKey, addTurn } = require("./memory/working_memory");
+
+// ── Phase B: relationship + mood ─────────────────────────────────────────────
+const { getIdentityTruth }    = require("./memory_store");
+const { getFamiliarityBand }  = require("./familiarity_engine");
+const { getCurrentMood }      = require("./mood_engine");
+const { getInertiaState }     = require("./inertia_engine");
+const { getEmotionalResidue } = require("./emotional_residue");
 const { fetchSnapshot }           = require("./modules/trading/tv_datafeed");
 const { getOpenSimulatedTrades }  = require("./modules/trading/trade_journal");
+const { getSchedulerStatus, getTradingMoodModifier, getLearningProgress, getCuriosity, getAnticipationHint } = require("./modules/trading/trading_scheduler");
 const axios = require("axios");
+const fs    = require("fs");
+const path  = require("path");
+
+const TRADES_MEM = path.join(__dirname, "../memory/trades");
+
+/**
+ * 組合晴的交易自我認知快照（僅在 trading_research 對話中注入）
+ * 讓晴知道自己的策略、學習進度、近期表現和反思結論
+ */
+function buildTradingSelfContext() {
+  const parts = [];
+
+  // 策略框架
+  parts.push("策略：DTFX（市場結構 + 訂單塊/FVG + 流動性），學習中，尚未實盤");
+
+  // 統計快照
+  try {
+    const statsPath = path.join(TRADES_MEM, "stats.json");
+    if (fs.existsSync(statsPath)) {
+      const s = JSON.parse(fs.readFileSync(statsPath, "utf8"));
+      if (s.total > 0) {
+        parts.push(`模擬成績：${s.total} 筆  勝率 ${s.winRate}%  平均RR ${s.avgRR}`);
+      } else {
+        parts.push("模擬成績：還沒有足夠資料");
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 學習進度
+  try {
+    const progress = getLearningProgress();
+    if (progress) parts.push(progress);
+  } catch { /* ignore */ }
+
+  // 排程器狀態
+  try {
+    const sched = getSchedulerStatus();
+    if (sched.active) {
+      parts.push(`看盤節奏：每 ${sched.current_interval_min} 分鐘  共觀察 ${sched.observations_total} 次  發現 ${sched.setup_hits} 個 setup`);
+    }
+  } catch { /* ignore */ }
+
+  // 最近反思（最後一條）
+  try {
+    const reviewPath = path.join(TRADES_MEM, "reviews.jsonl");
+    if (fs.existsSync(reviewPath)) {
+      const lines = fs.readFileSync(reviewPath, "utf8").split("\n").filter(Boolean);
+      if (lines.length > 0) {
+        const last = JSON.parse(lines[lines.length - 1]);
+        const snippet = String(last.review || "").slice(0, 120).replace(/\n/g, " ");
+        if (snippet) parts.push(`最近反思：${snippet}…`);
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 最近假設（最後一條）
+  try {
+    const hypPath = path.join(TRADES_MEM, "hypotheses.jsonl");
+    if (fs.existsSync(hypPath)) {
+      const lines = fs.readFileSync(hypPath, "utf8").split("\n").filter(Boolean);
+      if (lines.length > 0) {
+        const last = JSON.parse(lines[lines.length - 1]);
+        const snippet = String(last.hypothesis || "").slice(0, 100).replace(/\n/g, " ");
+        if (snippet) parts.push(`當前假設：${snippet}…`);
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 當前學習疑問
+  try {
+    const q = getCuriosity();
+    if (q) parts.push(`最近在想：${q}`);
+  } catch { /* ignore */ }
+
+  return parts.join("  |  ");
+}
 
 const MAX_RETRY = 2; // max generation attempts before fallback
 
@@ -77,6 +161,50 @@ async function processEvent(event, _ollamaClient) {
   // ── Module 2: Intent classification + routing level ───────────────────────
   const intentResult = await parseIntent(contextPacket);
   const level = intentResult.routing_level;
+
+  // ── Phase B: Relationship + Mood injection ────────────────────────────────
+  // Inject familiarity, tone, mood, emotional residue into contextPacket.meta
+  // so persona_generator can build richer, relationship-aware prompts.
+  try {
+    const userId = contextPacket.speaker?.id;
+    if (userId) {
+      // Relationship
+      const identity = getIdentityTruth({ userId });
+      const rel      = identity.relationship || {};
+      const band     = getFamiliarityBand(rel.familiarity || 0);
+      contextPacket.meta.relationship = {
+        familiarity:      rel.familiarity || 0,
+        band,                                 // stranger/casual/familiar/close
+        interactionCount: rel.interactionCount || 0,
+        lastTopic:        rel.lastTopic || "",
+        knownFacts:       (identity.knownFacts || []).slice(0, 4),
+        role:             identity.role || "public_user",
+        nickname:         identity.nickname || contextPacket.speaker.name || "",
+      };
+
+      // Emotional residue (lingering tone from past interactions)
+      const globalKey = userId;
+      const residue   = getEmotionalResidue(globalKey);
+      if (residue && residue.type && residue.intensity > 0.2) {
+        contextPacket.meta.emotional_residue = {
+          type:      residue.type,      // ambient/delight/mild_annoyance/...
+          intensity: residue.intensity, // 0–1
+        };
+      }
+    }
+
+    // Mood (global state, not per-user)
+    const inertia   = getInertiaState();
+    const moodState = getCurrentMood("Asia/Taipei", {
+      drive:       inertia.drive        || 0,
+      activeChats: inertia.activeChatCount || 0,
+    });
+    contextPacket.meta.mood = {
+      label:    moodState.mood,             // PLAYFUL/CURIOUS/CALM/TIRED/WITHDRAWN
+      energy:   moodState.energy   ?? 0.5,
+      openness: moodState.openness ?? 0.5,
+    };
+  } catch { /* Phase B enrichment is non-blocking */ }
 
   // ── Module 3: Reference resolution (Level 1+) ─────────────────────────────
   // Level 0 (social_reply) skips full reference resolution for speed
@@ -116,7 +244,24 @@ async function processEvent(event, _ollamaClient) {
         contextPacket.meta.sim_positions = "目前無開放模擬倉位";
       }
     } catch { /* non-blocking */ }
+
+    // Inject 晴's trading self-awareness (strategy, stats, reflections)
+    try {
+      contextPacket.meta.trading_self = buildTradingSelfContext();
+    } catch { /* non-blocking */ }
   }
+
+  // ── 交易情緒修飾語（全場景，不限 trading 主題）────────────────────────────
+  try {
+    const mood = getTradingMoodModifier();
+    if (mood) contextPacket.meta.trading_mood = mood;
+  } catch { /* non-blocking */ }
+
+  // ── 期待感：即將到來的高影響力事件（全場景）────────────────────────────────
+  try {
+    const anticipation = getAnticipationHint();
+    if (anticipation) contextPacket.meta.trading_anticipation = anticipation;
+  } catch { /* non-blocking */ }
 
   // ── Modules 5+6: Generate → Judge loop ───────────────────────────────────
   let draftResult  = null;
