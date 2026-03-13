@@ -76,6 +76,7 @@ async function generateGroupRemark(recentMessages, mood, ollamaClient) {
         system: systemPrompt,
         prompt,
         options: { temperature: 0.78, num_predict: 80 },
+        priority: 3,  // background — yields to active conversations
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), TIMEOUT_MS)),
     ]);
@@ -199,6 +200,7 @@ async function generateDmRemark(user, identityMemory, mood, ollamaClient) {
         system: systemPrompt,
         prompt,
         options: { temperature: 0.75, num_predict: 80 },
+        priority: 3,  // background — yields to active conversations
       }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), TIMEOUT_MS)),
     ]);

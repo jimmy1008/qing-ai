@@ -51,12 +51,14 @@ function buildBody(model, system, prompt, options = {}, stream = false, keepAliv
 function createMultiModelClient() {
   return {
     // Main model — used for primary reply generation
-    async generate({ system, prompt, options = {}, timeoutMs = MAIN_TIMEOUT_MS, keepAlive = LLM_KEEP_ALIVE }) {
+    // priority: 1 = conversation (default), 3 = background/proactive
+    async generate({ system, prompt, options = {}, timeoutMs = MAIN_TIMEOUT_MS, keepAlive = LLM_KEEP_ALIVE, priority = 1 }) {
       try {
         const raw = await callOllama(
           MAIN_MODEL,
           buildBody(MAIN_MODEL, system, prompt, options, false, keepAlive),
           timeoutMs,
+          priority,
         );
         return String(raw).trim();
       } catch (err) {
@@ -69,12 +71,13 @@ function createMultiModelClient() {
     },
 
     // Fast model — used for repair, artifact retry, reflex, post evaluation
-    async generateFast({ system, prompt, options = {}, timeoutMs = FAST_TIMEOUT_MS, keepAlive = LLM_KEEP_ALIVE }) {
+    async generateFast({ system, prompt, options = {}, timeoutMs = FAST_TIMEOUT_MS, keepAlive = LLM_KEEP_ALIVE, priority = 1 }) {
       try {
         const raw = await callOllama(
           FAST_MODEL,
           buildBody(FAST_MODEL, system, prompt, { temperature: 0.5, top_p: 0.85, ...options }, false, keepAlive),
           timeoutMs,
+          priority,
         );
         return String(raw).trim();
       } catch (err) {
