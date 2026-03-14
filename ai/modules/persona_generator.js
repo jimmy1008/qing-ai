@@ -16,6 +16,8 @@
 const axios = require("axios");
 const { enqueueLLM } = require("../llm_queue");
 const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE, STYLE_CONTRACT } = require("../persona_core");
+const { applyBudget, trimRecentTurns, USER_PROMPT_CHAR_BUDGET } = require("./context_budget");
+const { getUnreadEvents, markAllRead } = require("../system_event_log");
 
 async function generatePersonaReply(contextPacket, intentResult, referenceResult, selectedMemories = []) {
   const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
@@ -142,20 +144,95 @@ function buildSceneStyleBlock(scene, intentResult) {
 // ── User prompt ───────────────────────────────────────────────────────────────
 
 function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
-  const lines = [];
   const speakerName = contextPacket.speaker.name || "對方";
+  const meta        = contextPacket.meta || {};
+  const rel         = meta.relationship;
 
-  // ── Phase B: Known facts about this person ───────────────────────────────
-  const rel = contextPacket.meta?.relationship;
-  if (rel && rel.knownFacts && rel.knownFacts.length > 0) {
-    lines.push("[你對對方的了解]");
-    rel.knownFacts.forEach(f => lines.push(`· ${f}`));
-    if (rel.lastTopic) lines.push(`· 上次聊到：${rel.lastTopic}`);
-    lines.push("");
+  // ── Budget-aware block construction ───────────────────────────────────────
+  // Priority: critical > high > medium > low > optional
+  // applyBudget() fills from top until char budget exhausted.
+
+  const blocks = [];
+
+  // CRITICAL — unread system events (things that just happened to 晴's world)
+  const unreadEvents = getUnreadEvents();
+  if (unreadEvents.length > 0) {
+    const eventLines = ["[你剛才察覺到的事 — 這些剛發生，你可以自然地在對話中提到或反應]"];
+    unreadEvents.forEach(e => eventLines.push(`· ${e.summary}${e.detail ? `（${e.detail}）` : ""}`));
+    eventLines.push("");
+    blocks.push({ priority: "critical", text: eventLines.join("\n") });
+    // Mark as read so they only appear once
+    markAllRead();
   }
 
-  // ── Phase B: Emotional residue ────────────────────────────────────────────
-  const residue = contextPacket.meta?.emotional_residue;
+  // CRITICAL — current turn (always included)
+  blocks.push({
+    priority: "critical",
+    text: `${speakerName}：${contextPacket.current_message.text}\n晴：`,
+  });
+
+  // HIGH — first meeting / new group awareness
+  if (meta.firstMeeting) {
+    const name = meta.firstMeetingName ? `（對方叫 ${meta.firstMeetingName}）` : "";
+    blocks.push({
+      priority: "high",
+      text: `[第一次見面]\n這是你第一次跟這個人說話${name}。你不認識他，可以自然地帶一點陌生感，也可以好奇一下這個人是誰。不用特別自我介紹，順著對話走。\n`,
+    });
+  }
+
+  if (meta.newGroup) {
+    const title = meta.newGroupTitle ? `「${meta.newGroupTitle}」` : "這個群";
+    blocks.push({
+      priority: "high",
+      text: `[剛進新群組]\n你剛剛出現在 ${title}，這是你第一次在這裡說話。可以自然地帶一點剛到新地方的感覺，不用特別說「我是新來的」，語氣上稍微觀察一下環境。\n`,
+    });
+  }
+
+  // HIGH — recent conversation (trimmed to fit budget)
+  const RECENT_BUDGET = Math.floor(USER_PROMPT_CHAR_BUDGET * 0.45); // 45% for conversation
+  const rawRecent = contextPacket.recent_messages.slice(-8);
+  const trimmedRecent = trimRecentTurns(rawRecent, RECENT_BUDGET);
+  if (trimmedRecent.length > 0) {
+    const recentLines = ["[最近對話]"];
+    trimmedRecent.forEach(m => {
+      const name = m.role === "assistant" ? "晴" : (m.speaker_name || speakerName);
+      recentLines.push(`${name}：${m.text}`);
+    });
+    recentLines.push("");
+    blocks.push({ priority: "high", text: recentLines.join("\n") });
+  }
+
+  // MEDIUM — episodic memories
+  if (selectedMemories.length > 0) {
+    const memLines = ["[你記得的事]"];
+    selectedMemories.slice(0, 3).forEach(m => {
+      const tag = m.emotional_tag ? `（${m.emotional_tag}）` : "";
+      memLines.push(`· ${m.content || m.text || ""}${tag}`);
+    });
+    memLines.push("");
+    blocks.push({ priority: "medium", text: memLines.join("\n") });
+  }
+
+  // LOW — known facts + last topic + impression
+  if (rel) {
+    const factLines = [];
+    if (rel.knownFacts && rel.knownFacts.length > 0) {
+      factLines.push("[你對對方的了解]");
+      rel.knownFacts.slice(0, 4).forEach(f => factLines.push(`· ${f}`));
+      if (rel.lastTopic) factLines.push(`· 上次聊到：${rel.lastTopic}`);
+      if (rel.impression) factLines.push(`· 你的印象：${rel.impression}`);
+      factLines.push("");
+    } else if (rel.impression) {
+      factLines.push(`（對這個人的印象：${rel.impression}）`);
+      factLines.push("");
+    }
+    if (factLines.length > 0) {
+      blocks.push({ priority: "low", text: factLines.join("\n") });
+    }
+  }
+
+  // OPTIONAL — emotional residue
+  const residue = meta.emotional_residue;
   if (residue && residue.intensity > 0.3) {
     const residueDesc = {
       delight:          "上次互動讓你心情不錯，有一點愉悅還沒散",
@@ -165,69 +242,52 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
       ambient:          "有點說不清楚的餘韻還在",
     }[residue.type] || "";
     if (residueDesc) {
-      lines.push(`（${residueDesc}，不用特別說出來，自然帶進語氣就好）`);
-      lines.push("");
+      blocks.push({ priority: "optional", text: `（${residueDesc}，不用特別說出來，自然帶進語氣就好）\n` });
     }
   }
 
-  // Relevant memories (from episodic store)
-  if (selectedMemories.length > 0) {
-    lines.push("[你記得的事]");
-    selectedMemories.slice(0, 3).forEach(m => lines.push(`· ${m.content || m.text || ""}`));
-    lines.push("");
+  // OPTIONAL — group recent messages (what others have been saying)
+  if (meta.groupRecentMessages) {
+    blocks.push({ priority: "optional", text: `[群裡最近有人在說]\n${meta.groupRecentMessages}\n（背景參考，不需要直接回應這些，但可以讓你感受一下群組氣氛）\n` });
   }
 
-  // Live market data — presented as 晴's own awareness, not a labeled data block
-  if (contextPacket.meta?.market_context) {
-    lines.push(`（你剛瞄了一眼市場：${contextPacket.meta.market_context.replace(/\n/g, " / ")}）`);
-    lines.push("");
+  // OPTIONAL — long absence
+  if (meta.absenceDays >= 3) {
+    blocks.push({ priority: "optional", text: `（對方上次說話是 ${meta.absenceDays} 天前，久一點沒見了，可以自然地帶出「好久不見」的感覺，不用特別說這句話）\n` });
   }
 
-  // Simulated positions — presented as 晴's own knowledge
-  if (contextPacket.meta?.sim_positions) {
-    const pos = contextPacket.meta.sim_positions;
-    lines.push(pos === "目前無開放模擬倉位"
-      ? "（你目前沒有開放中的模擬倉位）"
-      : `（你的模擬倉位：${pos.replace(/\n/g, " / ")}）`
-    );
-    lines.push("");
+  // OPTIONAL — topic heat modifier
+  if (meta.topic_heat_modifier) {
+    blocks.push({ priority: "optional", text: `${meta.topic_heat_modifier}\n` });
   }
 
-  // Trading self-awareness — 晴's own strategy/stats/reflections
-  // Only injected when topic is trading_research. Use naturally in first-person.
-  if (contextPacket.meta?.trading_self) {
-    lines.push(`（你的交易學習狀況：${contextPacket.meta.trading_self}）`);
-    lines.push("");
+  // OPTIONAL — daily activity
+  if (meta.daily_activity) {
+    blocks.push({ priority: "optional", text: `（剛才：${meta.daily_activity}）\n` });
   }
 
-  // 交易情緒修飾語（始終注入，不限主題）
-  if (contextPacket.meta?.trading_mood) {
-    lines.push(contextPacket.meta.trading_mood);
-    lines.push("");
+  // OPTIONAL — market context
+  if (meta.market_context) {
+    blocks.push({ priority: "optional", text: `（你剛瞄了一眼市場：${meta.market_context.replace(/\n/g, " / ")}）\n` });
   }
 
-  // 期待感：即將到來的重大事件（始終注入，不限主題）
-  if (contextPacket.meta?.trading_anticipation) {
-    lines.push(contextPacket.meta.trading_anticipation);
-    lines.push("");
+  // OPTIONAL — sim positions
+  if (meta.sim_positions) {
+    blocks.push({ priority: "optional", text: `（你最近的看法快照：${meta.sim_positions.replace(/\n/g, " / ")}）\n` });
   }
 
-  // Recent conversation window
-  const recent = contextPacket.recent_messages.slice(-8);
-  if (recent.length > 0) {
-    lines.push("[最近對話]");
-    recent.forEach(m => {
-      const name = m.role === "assistant" ? "晴" : (m.speaker_name || speakerName);
-      lines.push(`${name}：${m.text}`);
-    });
-    lines.push("");
+  // OPTIONAL — trading self + mood + anticipation
+  if (meta.trading_self) {
+    blocks.push({ priority: "optional", text: `（你的交易學習狀況：${meta.trading_self}）\n` });
+  }
+  if (meta.trading_mood) {
+    blocks.push({ priority: "optional", text: `${meta.trading_mood}\n` });
+  }
+  if (meta.trading_anticipation) {
+    blocks.push({ priority: "optional", text: `${meta.trading_anticipation}\n` });
   }
 
-  // Current turn
-  lines.push(`${speakerName}：${contextPacket.current_message.text}`);
-  lines.push("晴：");
-
-  return lines.join("\n");
+  return applyBudget(blocks);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

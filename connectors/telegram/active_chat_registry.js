@@ -1,6 +1,37 @@
 // Tracks group chats and DM users seen in the current session
 // Used by telegram_proactive_scheduler to know where to proactively send
 
+const fs   = require("fs");
+const path = require("path");
+
+const KNOWN_GROUPS_PATH = path.join(__dirname, "../../memory/known_groups.json");
+
+// Load persisted known groups (chatId → firstSeenTs)
+function loadKnownGroups() {
+  try {
+    if (fs.existsSync(KNOWN_GROUPS_PATH)) return JSON.parse(fs.readFileSync(KNOWN_GROUPS_PATH, "utf-8"));
+  } catch {}
+  return {};
+}
+
+const knownGroupsStore = loadKnownGroups();
+
+function saveKnownGroups() {
+  fs.writeFileSync(KNOWN_GROUPS_PATH, JSON.stringify(knownGroupsStore, null, 2), "utf-8");
+}
+
+/**
+ * Returns true if this is the first time 晴 has seen this group (ever).
+ * Side effect: marks it as known.
+ */
+function checkAndMarkNewGroup(chatId) {
+  const key = String(chatId);
+  if (knownGroupsStore[key]) return false;
+  knownGroupsStore[key] = Date.now();
+  saveKnownGroups();
+  return true;
+}
+
 const MAX_RECENT_MESSAGES = 10;
 
 // chatId → { lastActivity: timestamp, recentMessages: [{ text, userId, username, ts }] }
@@ -48,4 +79,4 @@ function getKnownDmUsers() {
   }));
 }
 
-module.exports = { registerGroupMessage, registerDmUser, getActiveGroups, getKnownDmUsers };
+module.exports = { registerGroupMessage, registerDmUser, getActiveGroups, getKnownDmUsers, checkAndMarkNewGroup, groupRegistry };

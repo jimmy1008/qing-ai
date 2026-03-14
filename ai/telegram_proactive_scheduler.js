@@ -1,4 +1,6 @@
 const { isWithinActiveHours, getDriveContext } = require("./threads_activity_scheduler");
+const { isPhoneConnected, pushToPhone } = require("../connectors/phone/phone_push");
+const { synthesize: ttsSynthesize } = require("./tts_engine");
 const { getCurrentMood } = require("./mood_engine");
 const { getInertiaState, tickInertia, getRecentStateHistory } = require("./inertia_engine");
 const { shouldInitiateConversation, markInitiation } = require("./relationship_engine");
@@ -6,8 +8,7 @@ const { getOrCreateGlobalUserKey } = require("./global_identity_map");
 const memoryStore = require("../memory/memory_store");
 const { ingestEvent } = require("./memory_bus");
 const { getActiveGroups, getKnownDmUsers } = require("../connectors/telegram/active_chat_registry");
-const { buildSystemPrompt } = require("./pipeline");
-const { getPersonaModeConfig } = require("./persona_mode_router");
+const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE, STYLE_CONTRACT } = require("./persona_core");
 
 // Per-group last proactive send timestamp (in-memory only)
 const groupLastSent = new Map();
@@ -34,30 +35,8 @@ async function generateGroupRemark(recentMessages, mood, ollamaClient) {
 
   const moodLabel = { PLAYFUL: "活潑", CURIOUS: "好奇", CALM: "平靜", TIRED: "疲倦", WITHDRAWN: "退縮" }[mood] || "平靜";
 
-  // Build full persona system prompt for group public mode
-  const personaModeKey = "public_user_public";
-  const personaMode = { ...getPersonaModeConfig(personaModeKey) };
-  const systemContext = {
-    role: "public_user",
-    channel: "group",
-    connector: "telegram",
-    personaModeKey,
-    personaMode,
-    conversationState: {
-      topicTurnsRemaining: 0,
-      topicAnchor: null,
-      initiativeLevel: 0.5,
-      questionRatio: 0,
-      maxConsecutiveQuestions: 0,
-    },
-    moodState: { mood, reason: "群組觀察時段" },
-    injectionDetected: false,
-    authoritySpoofAttempt: false,
-    forceNeutralTone: false,
-    toneStyle: "default",
-  };
-
-  const systemPrompt = buildSystemPrompt(systemContext);
+  const moodDesc = { PLAYFUL: "你現在心情輕鬆有點皮，說話帶點能量。", CURIOUS: "你現在狀態挺投入，腦子轉得快。", CALM: "你現在比較沈穩，說話直接，不多廢話。", TIRED: "你現在有點懶，話少，回應精簡。", WITHDRAWN: "你現在比較沈默，不太想主動展開話題。" }[mood] || "";
+  const systemPrompt = [PERSONA_HARD_LOCK, "", IMMUTABLE_PERSONA_CORE, "", STYLE_CONTRACT, "", "【場景】群聊。簡短，不搶戲，保持輕快。最多 1-2 句。", moodDesc ? `\n[當前狀態]\n${moodDesc}` : ""].join("\n");
 
   const prompt = [
     `群組最近的對話紀錄：`,
@@ -159,22 +138,8 @@ async function generateDmRemark(user, identityMemory, mood, ollamaClient) {
     .join("\n");
 
   const role = identityMemory.longTerm?.role || "public_user";
-  const personaModeKey = role === "developer" ? "developer_private_soft" : "public_user_private";
-  const systemContext = {
-    role,
-    channel: "private",
-    connector: "telegram",
-    personaModeKey,
-    personaMode: { ...getPersonaModeConfig(personaModeKey) },
-    conversationState: { topicTurnsRemaining: 0, topicAnchor: null, initiativeLevel: 0.6, questionRatio: 0 },
-    moodState: { mood, reason: "主動聯絡時段" },
-    injectionDetected: false,
-    authoritySpoofAttempt: false,
-    forceNeutralTone: false,
-    toneStyle: "default",
-  };
-
-  const systemPrompt = buildSystemPrompt(systemContext);
+  const moodDescDm = { PLAYFUL: "你現在心情輕鬆有點皮，說話帶點能量。", CURIOUS: "你現在狀態挺投入，腦子轉得快。", CALM: "你現在比較沈穩，說話直接，不多廢話。", TIRED: "你現在有點懶，話少，回應精簡。", WITHDRAWN: "你現在比較沈默，不太想主動展開話題。" }[mood] || "";
+  const systemPrompt = [PERSONA_HARD_LOCK, "", IMMUTABLE_PERSONA_CORE, "", STYLE_CONTRACT, "", "【場景】私聊。語氣直接自然，可稍親密。最多 2-3 句。", moodDescDm ? `\n[當前狀態]\n${moodDescDm}` : ""].join("\n");
 
   const contextParts = [];
   if (recentLines) contextParts.push(`最近對話：\n${recentLines}`);
@@ -260,6 +225,27 @@ async function tryDmInitiative(bot, ollamaClient) {
   return false;
 }
 
+// ── Phone proactive push ──────────────────────────────────────────────────────
+async function tryPhoneInitiative(ollamaClient) {
+  if (!isPhoneConnected()) return false;
+  try {
+    const moodState = getCurrentMood("Asia/Taipei", { drive: getInertiaState().drive || 0 });
+    // Reuse DM remark generation — pick first known DM user as context, or use generic
+    const knownUsers = (() => { try { return require("../connectors/telegram/active_chat_registry").getKnownDmUsers(); } catch { return []; } })();
+    const user = knownUsers[0] || { username: "user" };
+    const identityMemory = knownUsers[0] ? memoryStore.getIdentityMemory(knownUsers[0].globalKey) : {};
+    const text = await generateDmRemark(user, identityMemory || {}, moodState.mood, ollamaClient);
+    if (!text) return false;
+    const audio = await ttsSynthesize(text);
+    const sent = pushToPhone(text, audio);
+    if (sent) console.log("[proactive_scheduler] pushed to phone:", text.slice(0, 60));
+    return sent;
+  } catch (err) {
+    console.error("[proactive_scheduler] tryPhoneInitiative failed:", err.message);
+    return false;
+  }
+}
+
 async function runProactiveTick(bot, ollamaClient) {
   try {
     const driveContext = getDriveContext();
@@ -267,6 +253,11 @@ async function runProactiveTick(bot, ollamaClient) {
     const drive = getInertiaState().drive || 0;
     if (drive < 3) return;
     console.log(`[proactive_tick] drive=${drive.toFixed(2)} mood=${getCurrentMood("Asia/Taipei", {}).mood}`);
+
+    // Phone push runs in parallel with Telegram (independent channel)
+    if (isPhoneConnected()) {
+      tryPhoneInitiative(ollamaClient).catch(() => {});
+    }
 
     // 65% group, 35% DM; if one fails, try the other
     if (Math.random() < 0.65) {

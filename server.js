@@ -104,58 +104,6 @@ const server = app.listen(PORT, () => {
     .catch((e) => console.warn(`[warmup] model pre-warm failed: ${e.message}`));
 });
 
-// ─── Voice Chat WebSocket ─────────────────────────────────────────────────────
-const wss = new WebSocket.Server({ server, path: "/ws/voice" });
-wss.on("connection", (ws) => {
-  const sessionHistory = [];
-
-  ws.on("message", async (raw) => {
-    let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
-    if (msg.type !== "speak" && msg.type !== "initiate") return;
-
-    const isInitiate = msg.type === "initiate";
-    const userText = isInitiate ? null : String(msg.text || "").trim();
-    if (!isInitiate && !userText) return;
-
-    const prompt = isInitiate
-      ? (sessionHistory.length === 0
-          ? "現在開始語音對話，你主動說第一句話，說你現在腦海裡浮現的任何事情，不要說「你好」之類的問候，直接說你想說的。"
-          : "對話沉默了一段時間，你主動說一句話，可以繼續剛才的話題、說你突然想到的事，或者問對方一個具體的問題。說話自然，不解釋為什麼突然說話。")
-      : userText;
-
-    if (!isInitiate) ws.send(JSON.stringify({ type: "thinking" }));
-
-    try {
-      const context = buildContext(prompt, sessionHistory, {
-        userId: null, username: null, role: "developer",
-        connector: "voice", channel: "private", isPrivate: true,
-      });
-
-      let fullReply = "";
-      let chunkIndex = 0;
-
-      for await (const sentence of generateVoiceReplyStream(prompt, context, ollamaClient)) {
-        fullReply += sentence;
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "audio_chunk", text: sentence, index: chunkIndex++ }));
-        }
-      }
-
-      if (!isInitiate) sessionHistory.push({ role: "user", text: userText });
-      if (fullReply)   sessionHistory.push({ role: "bot", text: fullReply });
-      if (sessionHistory.length > 40) sessionHistory.splice(0, 4);
-
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "reply_done", text: fullReply }));
-      }
-    } catch (err) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "error", message: err.message }));
-      }
-    }
-  });
-});
 
 // ── Priority action scheduler ─────────────────────────────────────────────────
 setInterval(() => {
@@ -174,4 +122,5 @@ if (process.env.THREADS_PAUSED === "1") {
   startActivityLoop();
 }
 
-require("./connectors/telegram/bot");
+// Telegram and Discord are started as separate pm2 processes.
+// See ecosystem.config.js — do NOT require them here.

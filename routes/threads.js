@@ -19,8 +19,37 @@ const { recordSelfPost, readSelfPosts } = require("../connectors/threads_browser
 const {
   planAction, buildThreadsPublicReply, shouldEngageExternalPost, canReplyExternal, processNextAction,
 } = require("../ai/action_planner");
-const { generateThreadsPublicReplyFromLLM } = require("../ai/pipeline");
+const { processEvent: orchestratorV2 } = require("../ai/orchestrator");
 const { getCurrentMood, getMoodReadDelay } = require("../ai/mood_engine");
+
+// Threads public reply via v2 orchestrator
+async function generateThreadsPublicReplyFromLLM(event = {}) {
+  const text = event.content || event.text || event.postText || "";
+  const orchEvent = {
+    type:      "message",
+    text,
+    content:   text,
+    userId:    event.userId || null,
+    username:  event.authorUsername || event.username || null,
+    connector: "threads_browser",
+    isPrivate: false,
+    channel:   "public",
+    role:      "public_user",
+    meta: {
+      originalPost:    event.originalPost || null,
+      originalComment: event.originalComment || null,
+      targetUrl:       event.targetUrl || null,
+      regenerateIndex: event.regenerateIndex || 0,
+      previousReply:   event.previousReply || null,
+    },
+  };
+  const result = await orchestratorV2(orchEvent);
+  return {
+    replyText:   String(result?.reply || ""),
+    toneProfile: result?.meta?.tone || "natural",
+    personaModeKey: "public_user_public",
+  };
+}
 
 const MAX_AUTO_SCAN_PER_HOUR = 2;
 const autoScanTimestamps = [];

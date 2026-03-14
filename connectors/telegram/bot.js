@@ -2,19 +2,23 @@ const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
-const { buildContext, createOllamaClient, generateAIReply } = require("../../ai/pipeline");
+const { processEvent }             = require("../../ai/orchestrator");
+const { createMultiModelClient }   = require("../../ai/llm_client");
 const { detectSearchIntent, search, getSearchingPhrase } = require("../../ai/web_search");
 const { ingestEvent } = require("../../ai/memory_bus");
 const { describeImage } = require("../../ai/image_describer");
 const { markGroupReplySent, getGroupState } = require("../../ai/group_presence_engine");
 const { detectMention } = require("../../ai/mention_detector");
 const developerConfig = require("../../config/developer_config");
-const { registerGroupMessage, registerDmUser } = require("./active_chat_registry");
-const { getOrCreateGlobalUserKey } = require("../../ai/global_identity_map");
+const { registerGroupMessage, registerDmUser, checkAndMarkNewGroup } = require("./active_chat_registry");
+const { getOrCreateGlobalUserKey, isKnownUser } = require("../../ai/global_identity_map");
 const { startProactiveScheduler } = require("../../ai/telegram_proactive_scheduler");
+const { trackReply, lookupReply }  = require("./reaction_tracker");
+const { processReaction }          = require("../../ai/feedback_receptor");
+const { logConnectorReady }        = require("../../ai/system_event_log");
 
 const token = process.env.TG_TOKEN;
-const ollamaClient = createOllamaClient();
+const ollamaClient = createMultiModelClient(); // still used by proactive scheduler
 
 /**
  * Split a reply into at most 2 message segments for natural texting feel.
@@ -53,7 +57,16 @@ function writeLog(stage, data = {}) {
   fs.appendFileSync(logPath, `${JSON.stringify({ timestamp: new Date().toISOString(), stage, ...data })}\n`);
 }
 
-const bot = new TelegramBot(token, { polling: true });
+const bot = new TelegramBot(token, {
+  polling: {
+    params: {
+      allowed_updates: [
+        "message", "edited_message", "channel_post",
+        "message_reaction", "message_reaction_count",
+      ],
+    },
+  },
+});
 let botUsername = null;
 
 bot.getMe()
@@ -61,6 +74,7 @@ bot.getMe()
     botUsername = info.username;
     console.log("Telegram connected:", info.username);
     writeLog("connected", { username: info.username });
+    logConnectorReady("telegram", `帳號：@${info.username}`);
     startProactiveScheduler(bot, ollamaClient);
   })
   .catch((err) => {
@@ -195,32 +209,6 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot) {
         : null,
     };
 
-    const groupHistory = (channel === "group" && chatId)
-      ? ((getGroupState(chatId)?.lastNMessages || []).map((item) => ({
-          role: "user",
-          text: item.text,
-          senderId: item.speakerId,
-          senderName: item.speakerName || null,
-          timestamp: item.ts,
-        })).concat([{
-          role: "user",
-          text: combinedInput,
-          senderId: msg.from?.id || null,
-          senderName: msg.from?.username || msg.from?.first_name || null,
-          timestamp: Date.now(),
-        }]))
-      : [];
-
-    const context = buildContext(combinedInput, groupHistory, {
-      userId: msg.from?.id || null,
-      username: msg.from?.username || null,
-      firstName: msg.from?.first_name || null,
-      lastName: msg.from?.last_name || null,
-      languageCode: msg.from?.language_code || null,
-      role: "user",
-      event,
-    });
-
     // Hard timeout — if LLM hangs, stop typing and abort silently rather than
     // leaving "typing..." visible indefinitely in the chat.
     const AI_HARD_TIMEOUT_MS = 90000; // 90s
@@ -229,27 +217,73 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot) {
       aiTimeoutHandle = setTimeout(() => reject(new Error("ai_hard_timeout")), AI_HARD_TIMEOUT_MS);
     });
 
-    let result;
+    // Handle web search: inject snippets into event text before sending to orchestrator
     const searchIntent = detectSearchIntent(combinedInput);
-    try {
-      if (searchIntent.needsSearch && channel === "private") {
-        const searchingMsg = getSearchingPhrase();
-        await bot.sendMessage(chatId, searchingMsg, { reply_to_message_id: msg.message_id });
-        const delay = 10000 + Math.random() * 20000;
-        const [snippets] = await Promise.all([
-          search(searchIntent.query),
-          new Promise((r) => setTimeout(r, delay)),
-        ]);
-        result = await Promise.race([
-          generateAIReply(combinedInput, context, ollamaClient, { searchSnippets: snippets }),
-          aiTimeoutPromise,
-        ]);
-      } else {
-        result = await Promise.race([
-          generateAIReply(combinedInput, context, ollamaClient),
-          aiTimeoutPromise,
-        ]);
+    if (searchIntent.needsSearch && channel === "private") {
+      const searchingMsg = getSearchingPhrase();
+      await bot.sendMessage(chatId, searchingMsg, { reply_to_message_id: msg.message_id });
+      const delay = 10000 + Math.random() * 20000;
+      const [snippets] = await Promise.all([
+        search(searchIntent.query),
+        new Promise((r) => setTimeout(r, delay)),
+      ]);
+      if (snippets && snippets.trim()) {
+        const augmented = `[網路搜尋結果]\n${snippets.trim()}\n\n[用戶問題] ${combinedInput}`;
+        event.text    = augmented;
+        event.content = augmented;
       }
+    }
+
+    // Add role to event (isDeveloper check)
+    event.role = isDeveloper ? "developer" : "user";
+
+    // Detect first meeting with this user
+    const userRef = { platform: "telegram", userId: String(msg.from?.id || ""), username: msg.from?.username };
+    if (!isDeveloper && !isKnownUser(userRef)) {
+      event.meta.firstMeeting = true;
+      event.meta.firstMeetingName = msg.from?.first_name || msg.from?.username || null;
+    }
+
+    // Detect first time in this group
+    if (channel === "group" && checkAndMarkNewGroup(chatId)) {
+      event.meta.newGroup = true;
+      event.meta.newGroupTitle = msg.chat?.title || null;
+    }
+
+    // P2 — inject recent group messages for context (exclude current sender's message)
+    if (channel === "group") {
+      const { groupRegistry } = require("./active_chat_registry");
+      const recentMsgs = groupRegistry?.get?.(chatId)?.recentMessages || [];
+      const others = recentMsgs
+        .filter(m => String(m.userId) !== String(msg.from?.id))
+        .slice(-5);
+      if (others.length > 0) {
+        event.meta.groupRecentMessages = others
+          .map(m => `${m.username || "?"}：${m.text}`)
+          .join("\n");
+      }
+    }
+
+    // P3 — long absence detection (private chat only)
+    if (channel === "private" && !isDeveloper) {
+      const { makeSessionKey, getSession } = require("../../ai/memory/working_memory");
+      const sessionKey = makeSessionKey(event);
+      const turns = getSession(sessionKey);
+      if (turns.length > 0) {
+        const lastTs = turns[turns.length - 1]?.ts || 0;
+        const daysSince = (Date.now() - lastTs) / (1000 * 60 * 60 * 24);
+        if (daysSince >= 3) {
+          event.meta.absenceDays = Math.floor(daysSince);
+        }
+      }
+    }
+
+    let result;
+    try {
+      result = await Promise.race([
+        processEvent(event),
+        aiTimeoutPromise,
+      ]);
     } catch (innerErr) {
       clearTimeout(aiTimeoutHandle);
       if (innerErr.message === "ai_hard_timeout") {
@@ -340,6 +374,17 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot) {
 
     if (channel === "group") markGroupReplySent(event);
 
+    // Track sent message for reaction feedback
+    if (sent?.message_id) {
+      const globalKey = getOrCreateGlobalUserKey({ platform: "telegram", userId: String(msg.from?.id || ""), username: msg.from?.username });
+      trackReply(chatId, sent.message_id, {
+        userId:    String(msg.from?.id || ""),
+        globalKey,
+        replyText: replyText,
+        userText:  inputText,
+      });
+    }
+
     ingestEvent({
       platform: "telegram",
       channelType: channel,
@@ -369,6 +414,7 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot) {
 
 // ─── Message handler ──────────────────────────────────────────────────────────
 bot.on("message", async (msg) => {
+  try {
   const chatId   = msg.chat?.id;
   const chatType = msg.chat?.type || "unknown";
   const channel  = chatType === "private" ? "private" : "group";
@@ -516,12 +562,57 @@ bot.on("message", async (msg) => {
 
   // ── Commands bypass buffer — process immediately ──
   if (isCommand) {
+    // P1 — /notify command (developer only): tell 晴 about a new feature/change
+    if (isDeveloper && /^\/notify(\s|$)/.test(inputText)) {
+      const note = inputText.replace(/^\/notify\s*/, "").trim();
+      if (note) {
+        const { appendEvent: ae } = require("../../ai/system_event_log");
+        ae("new_feature", note);
+        await bot.sendMessage(chatId, "✓ 記下來了，她下次說話就會知道").catch(() => {});
+      } else {
+        await bot.sendMessage(chatId, "用法：/notify <內容>").catch(() => {});
+      }
+      return;
+    }
     await dispatchToAI(inputText, msg, isDeveloper, isReplyToBot);
     return;
   }
 
   // ── Buffer regular messages; flush after 3.5s of silence ──
   bufferMessage(chatId, inputText, msg, isDeveloper, isReplyToBot);
+  } catch (err) {
+    writeLog("message_handler_error", { message: err.message, stack: err.stack?.slice(0, 300), chatId: msg.chat?.id });
+  }
+});
+
+// ─── Reaction feedback handler ────────────────────────────────────────────────
+// Fires when a user adds or changes a reaction on any message.
+// We only care about reactions on BOT messages (outgoing replies).
+bot.on("message_reaction", (update) => {
+  try {
+    const chatId    = update.chat?.id;
+    const messageId = update.message_id;
+    if (!chatId || !messageId) return;
+
+    // Only process new reactions (not removals)
+    const newReactions = update.new_reaction || [];
+    if (newReactions.length === 0) return;
+
+    const entry = lookupReply(chatId, messageId);
+    if (!entry) return; // not a bot message we tracked
+
+    const emoji = newReactions[0]?.emoji || "";
+    processReaction({
+      platform:  "telegram",
+      userId:    entry.userId,
+      globalKey: entry.globalKey,
+      replyText: entry.replyText,
+      userText:  entry.userText,
+      emoji,
+    });
+  } catch (e) {
+    // non-blocking
+  }
 });
 
 bot.on("polling_error", (err) => {

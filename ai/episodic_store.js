@@ -102,7 +102,7 @@ function applyDecay(episodes) {
  * @param {string} globalUserKey
  * @param {{ event_type: string, summary: string, importance: number, embedding: number[]|null }} episode
  */
-function storeEpisode(globalUserKey, { event_type, summary, importance, embedding }) {
+function storeEpisode(globalUserKey, { event_type, summary, importance, embedding, emotional_tag }) {
   if (!globalUserKey || !summary) return null;
 
   const episodes = loadEpisodes(globalUserKey);
@@ -119,6 +119,7 @@ function storeEpisode(globalUserKey, { event_type, summary, importance, embeddin
     event_type: String(event_type || "GENERAL"),
     summary: String(summary),
     importance: Number(importance || 0.7),
+    emotional_tag: emotional_tag ? String(emotional_tag).slice(0, 30) : null,
     embedding: embedding || null,
     created_at: Date.now(),
   };
@@ -212,4 +213,4 @@ function consolidateEpisodes(globalUserKey) {
   };
 }
 
-module.exports = { storeEpisode, getEpisodes, getEpisodeCount, consolidateEpisodes };
+module.exports = { storeEpisode, getEpisodes, getEpisodeCount, consolidateEpisodes, saveEpisodes };
