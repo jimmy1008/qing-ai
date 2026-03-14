@@ -6,7 +6,7 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 dotenv.config({ path: path.join(__dirname, ".env.local"), override: true });
 
 const express = require("express");
-const { createOllamaClient, buildContext, generateVoiceReplyStream } = require("./ai/pipeline");
+const { createOllamaClient, buildContext } = require("./ai/pipeline");
 const { processNextAction } = require("./ai/action_planner");
 const { startActivityLoop } = require("./ai/threads_activity_scheduler");
 const { getThreadsContext } = require("./connectors/threads_browser/browser_manager");
