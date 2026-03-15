@@ -191,22 +191,29 @@ function startDiscordClient() {
   client.on("callCreate", async (call) => {
     const channel = call.channel;
     if (!channel) return;
-    console.log(`[discord] incoming call — answering in 4s`);
-    await new Promise((r) => setTimeout(r, 4000));
-    try {
-      activeConn = await client.voice.joinChannel(channel, { selfDeaf: false, selfMute: false });
-      console.log(`[discord] answered DM call`);
-      // Auto-disconnect if the underlying connection drops
-      activeConn.once("disconnect", () => {
-        activeConn = null;
-        console.log("[discord] call connection dropped");
-      });
-      activeConn.once("closing", () => {
-        activeConn = null;
-      });
-    } catch (e) {
-      console.error("[discord] failed to answer call:", e.message);
+    console.log(`[discord] incoming call — answering in 1.5s`);
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Retry up to 2 times — voice WebSocket handshake sometimes needs a second attempt
+    let lastErr;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        activeConn = await client.voice.joinChannel(channel, { selfDeaf: false, selfMute: false });
+        console.log(`[discord] answered DM call (attempt ${attempt})`);
+        activeConn.once("disconnect", () => {
+          activeConn = null;
+          console.log("[discord] call connection dropped");
+        });
+        activeConn.once("closing", () => { activeConn = null; });
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[discord] call join attempt ${attempt} failed: ${e.message}`);
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
+      }
     }
+    if (lastErr) console.error("[discord] failed to answer call after retries:", lastErr.message);
   });
 
   // ── DM call ended (caller hung up) ────────────────────────────────────────

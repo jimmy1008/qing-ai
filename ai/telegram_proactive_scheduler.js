@@ -48,7 +48,7 @@ async function generateGroupRemark(recentMessages, mood, ollamaClient) {
     "只輸出那句話，或「沉默」。",
   ].join("\n");
 
-  const TIMEOUT_MS = 20000;
+  const TIMEOUT_MS = 35000;
   try {
     const raw = await Promise.race([
       (ollamaClient.generateFast || ollamaClient.generate)({
@@ -158,7 +158,7 @@ async function generateDmRemark(user, identityMemory, mood, ollamaClient) {
     "只輸出那句話，或「沉默」。",
   ].join("\n");
 
-  const TIMEOUT_MS = 20000;
+  const TIMEOUT_MS = 35000;
   try {
     const raw = await Promise.race([
       (ollamaClient.generateFast || ollamaClient.generate)({
