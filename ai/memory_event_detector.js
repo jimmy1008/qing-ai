@@ -63,7 +63,7 @@ async function detectMemoryEvent(userMessage, recentContext = "") {
     '{"store": false}',
     "",
     "如果有值得記憶的個人內容，返回：",
-    '{"store": true, "event_type": "TYPE", "importance": 0.X, "summary": "one sentence English summary of the personal fact"}',
+    '{"store": true, "event_type": "TYPE", "importance": 0.X, "summary": "one sentence English summary of the personal fact", "emotional_tag": "晴的一句話反應（繁體中文，例：有點意外/讓我記住了/感覺挺重要/有點好笑/沒什麼感覺）"}',
     "",
     "event_type 選項（長期記憶，importance ≥ 0.7）：",
     "PERSONAL_HISTORY（童年/成長/過去經歷）",
@@ -98,7 +98,7 @@ async function detectMemoryEvent(userMessage, recentContext = "") {
         system: "You are a memory classifier. Return only valid compact JSON, no markdown.",
         prompt,
         stream: false,
-        options: { temperature: 0.1, num_predict: 120 },
+        options: { temperature: 0.1, num_predict: 160 },
       },
       { timeout: DETECT_TIMEOUT_MS },
     );
@@ -116,9 +116,10 @@ async function detectMemoryEvent(userMessage, recentContext = "") {
     if (!VALID_EVENT_TYPES.has(eventType)) return null;
 
     return {
-      event_type: eventType,
-      importance: Math.min(Math.max(Number(result.importance), 0.35), 1.0),
-      summary: String(result.summary).slice(0, 200),
+      event_type:    eventType,
+      importance:    Math.min(Math.max(Number(result.importance), 0.35), 1.0),
+      summary:       String(result.summary).slice(0, 200),
+      emotional_tag: result.emotional_tag ? String(result.emotional_tag).slice(0, 30) : null,
     };
   } catch {
     // Silent failure — memory detection is best-effort, never blocks response

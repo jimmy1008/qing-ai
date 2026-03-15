@@ -86,30 +86,14 @@ function saveKey(key, value) {
  * Load all per-user files into a Map.
  * Also runs one-time migration from the legacy memory.json.
  */
+/**
+ * Startup: only run migration, do NOT load all files into memory.
+ * memory_store.js already has lazy loading per-key via loadKey().
+ * This keeps startup memory O(1) regardless of user count.
+ */
 function load() {
   _migrateLegacy();
-
-  const map = new Map();
-  if (!fs.existsSync(MEMORY_DIR)) return map;
-
-  let files;
-  try {
-    files = fs.readdirSync(MEMORY_DIR).filter(f => f.endsWith(".json"));
-  } catch {
-    return map;
-  }
-
-  for (const filename of files) {
-    const key = filenameToKey(filename);
-    try {
-      const raw = fs.readFileSync(path.join(MEMORY_DIR, filename), "utf-8").trim();
-      if (raw) map.set(key, JSON.parse(raw));
-    } catch (err) {
-      console.warn(`[memory] failed to load "${filename}":`, err.message);
-    }
-  }
-
-  return map;
+  return new Map(); // empty — lazy loading fills it on first access
 }
 
 /**

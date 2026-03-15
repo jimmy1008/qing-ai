@@ -5,30 +5,34 @@
 //
 // Trade schema:
 // {
-//   id:           string (uuid),
-//   created_at:   number (epoch ms),
-//   updated_at:   number,
-//   pair:         string,              // e.g. "BTCUSDT"
-//   direction:    "long"|"short",
-//   session:      "asia"|"london"|"new_york"|"unknown",
-//   timeframe:    string,              // e.g. "1H", "4H"
-//   entry:        number,
-//   stop:         number,
-//   target:       number,
-//   rr_planned:   number,              // planned R:R
-//   entry_type:   string,              // touch/confirmation/structure_confirmation
-//   key_area:     string,              // OB/FVG/SSL/BSL/EQ
-//   structure:    string,              // BOS/CHoCH/trend description
-//   reason:       string,              // free text — why this setup
-//   auxiliary:    object,             // { funding_rate, volume, oi, notes }
-//   status:       "open"|"closed"|"invalidated",
+//   id:              string (uuid),
+//   created_at:      number (epoch ms),
+//   updated_at:      number,
+//   closed_at:       number|null,      // epoch ms when trade was closed
+//   time_in_trade_ms:number|null,      // closed_at - created_at
+//   pair:            string,           // e.g. "BTCUSDT"
+//   direction:       "long"|"short",
+//   session:         "asia"|"london"|"new_york"|"unknown",
+//   timeframe:       string,           // e.g. "1H", "4H"
+//   entry:           number,
+//   stop:            number,
+//   target:          number,
+//   rr_planned:      number,           // planned R:R
+//   entry_score:     number|null,      // setup score at time of open (0-100)
+//   entry_type:      string,           // touch/confirmation/structure_confirmation
+//   key_area:        string,           // OB/FVG/SSL/BSL/EQ
+//   structure:       string,           // BOS/CHoCH/trend description
+//   reason:          string,           // free text — why this setup
+//   auxiliary:       object,           // { funding_rate, volume, oi, notes }
+//   status:          "open"|"closed"|"invalidated",
+//   exit_reason:     string|null,      // "tp_hit"|"sl_hit"|"manual"|"invalidated"
 //   result: {
-//     outcome:    "win"|"loss"|"breakeven"|null,
-//     exit_price: number|null,
-//     rr_achieved:number|null,
-//     pnl_pct:    number|null,
+//     outcome:       "win"|"loss"|"breakeven"|null,
+//     exit_price:    number|null,
+//     rr_achieved:   number|null,
+//     pnl_pct:       number|null,
 //   },
-//   reflection:   string|null,         // 晴的反思文字
+//   reflection:      string|null,      // 晴的反思文字
 // }
 
 const fs   = require("fs");
@@ -69,25 +73,29 @@ function logTrade(data) {
   const now = Date.now();
 
   const trade = {
-    id:          randomUUID(),
-    created_at:  now,
-    updated_at:  now,
-    pair:        String(data.pair || "").toUpperCase(),
-    direction:   data.direction === "short" ? "short" : "long",
-    session:     data.session || detectSession(),
-    timeframe:   data.timeframe || "1H",
-    entry:       Number(data.entry) || 0,
-    stop:        Number(data.stop)  || 0,
-    target:      Number(data.target) || 0,
-    rr_planned:  computeRR(data),
-    entry_type:  data.entry_type || "confirmation_entry",
-    key_area:    data.key_area   || "",
-    structure:   data.structure  || "",
-    reason:      data.reason     || "",
-    auxiliary:   data.auxiliary  || {},
-    simulated:   data.simulated === true,   // 模擬倉位標記
-    sim_status:  data.simulated === true ? (data.sim_status || "watching") : undefined,
-    status:      "open",
+    id:               randomUUID(),
+    created_at:       now,
+    updated_at:       now,
+    closed_at:        null,
+    time_in_trade_ms: null,
+    pair:             String(data.pair || "").toUpperCase(),
+    direction:        data.direction === "short" ? "short" : "long",
+    session:          data.session || detectSession(),
+    timeframe:        data.timeframe || "1H",
+    entry:            Number(data.entry) || 0,
+    stop:             Number(data.stop)  || 0,
+    target:           Number(data.target) || 0,
+    rr_planned:       computeRR(data),
+    entry_score:      data.entry_score != null ? Number(data.entry_score) : null,
+    entry_type:       data.entry_type || "confirmation_entry",
+    key_area:         data.key_area   || "",
+    structure:        data.structure  || "",
+    reason:           data.reason     || "",
+    auxiliary:        data.auxiliary  || {},
+    simulated:        data.simulated === true,   // 模擬倉位標記
+    sim_status:       data.simulated === true ? (data.sim_status || "watching") : undefined,
+    status:           "open",
+    exit_reason:      null,
     result: {
       outcome:     null,
       exit_price:  null,
@@ -111,10 +119,15 @@ function updateTrade(id, patch) {
   if (idx === -1) return null;
 
   const trade = trades[idx];
-  if (patch.result)     Object.assign(trade.result, patch.result);
-  if (patch.status)     trade.status = patch.status;
-  if (patch.reflection) trade.reflection = patch.reflection;
-  if (patch.sim_status) trade.sim_status = patch.sim_status;
+  if (patch.result)                     Object.assign(trade.result, patch.result);
+  if (patch.status)                     trade.status = patch.status;
+  if (patch.reflection)                 trade.reflection = patch.reflection;
+  if (patch.sim_status)                 trade.sim_status = patch.sim_status;
+  if (patch.exit_reason !== undefined)  trade.exit_reason = patch.exit_reason;
+  if (patch.closed_at !== undefined) {
+    trade.closed_at        = patch.closed_at;
+    trade.time_in_trade_ms = trade.closed_at - trade.created_at;
+  }
   trade.updated_at = Date.now();
 
   // Auto-compute rr_achieved
@@ -228,6 +241,13 @@ function groupBy(arr, key, statsFn) {
 }
 
 /**
+ * Get all open real trades (simulated !== true && status: "open").
+ */
+function getOpenTrades() {
+  return loadAll().filter(t => t.simulated !== true && t.status === "open");
+}
+
+/**
  * Get all open simulated trades (simulated: true && status: "open").
  */
 function getOpenSimulatedTrades() {
@@ -248,7 +268,18 @@ function getSimulatedStats() {
   return { total: closed.length, wins, losses, breakeven, winRate: Number(((wins/closed.length)*100).toFixed(1)), avgRR };
 }
 
+/**
+ * Delete all simulated trades from the journal (keep real trades).
+ * Returns the count of trades removed.
+ */
+function clearSimulatedTrades() {
+  const all  = loadAll();
+  const keep = all.filter(t => t.simulated !== true);
+  saveAll(keep);
+  return all.length - keep.length;
+}
+
 module.exports = {
   logTrade, updateTrade, getRecentTrades, getTrade, getClosedTrades, getStats,
-  getOpenSimulatedTrades, getSimulatedStats,
+  getOpenTrades, getOpenSimulatedTrades, getSimulatedStats, clearSimulatedTrades,
 };

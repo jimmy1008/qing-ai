@@ -69,12 +69,13 @@ async function selectMemories(contextPacket, intentResult) {
       .filter(m => passesSceneFilter(m, scene))
       .slice(0, MAX_MEMORIES)
       .map((m, i) => ({
-        memory_id:  `${globalUserKey}_${i}`,
-        type:       "episodic",
-        content:    m.summary,
-        reason:     `${m.event_type} — similarity ${m.similarity}`,
-        confidence: m.similarity,
-        scene_tag:  m.scene || "unknown",
+        memory_id:     `${globalUserKey}_${i}`,
+        type:          "episodic",
+        content:       m.summary,
+        emotional_tag: m.emotional_tag || null,
+        reason:        `${m.event_type} — similarity ${m.similarity}`,
+        confidence:    m.similarity,
+        scene_tag:     m.scene || "unknown",
       }));
   } catch {
     return [];

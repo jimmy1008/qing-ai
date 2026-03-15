@@ -223,7 +223,15 @@
       </div>
     </div>
     <nav class="topbar-nav">
-      <button class="btn" type="button" onclick="location.href='/'">← 控制台</button>
+      <button class="btn" type="button" onclick="location.href='/'">← 總覽</button>
+      <div class="nav-sep"></div>
+      <button class="btn" type="button" onclick="location.href='/threads-moderation'">Threads 審核</button>
+      <button class="btn" type="button" onclick="location.href='/ai-cognition'">AI 認知</button>
+      <button class="btn" type="button" onclick="location.href='/lora-dashboard.html'">LoRA 訓練</button>
+      <button class="btn" type="button" onclick="location.href='/relationships'">關係記憶</button>
+      <button class="btn" type="button" onclick="location.href='/emotion-log'">情緒日誌</button>
+      <button class="btn active" type="button">交易日誌</button>
+      <div class="nav-sep"></div>
       <button class="btn" type="button" onclick="location.href='/chart'">圖表分析</button>
       <button class="btn" type="button" onclick="observeMarket('BTC')">觀察 BTC</button>
       <button class="btn" type="button" onclick="observeMarket('ETH')">觀察 ETH</button>
@@ -609,7 +617,7 @@
 
     const bySession = s.bySession || {};
     const lines = Object.entries(bySession).map(([ses, d]) =>
-      `${ses}: 勝率 ${d.winRate}%  RR ${d.avgRR}  (${d.total} 筆)`
+      `${ses}: 勝率 ${d.winRate ?? '-'}%  RR ${d.avgRR ?? '-'}  (${d.total ?? 0} 筆)`
     );
     document.getElementById('sessionStats').textContent = lines.join('  |  ');
 
@@ -637,7 +645,8 @@
         `台灣時間：${s.taiwan_time}`,
         `狀態：${s.is_weekend ? '週末休息' : s.in_window ? '看盤中' : '非看盤時間'}${s.next_window_min > 0 ? `（${s.next_window_min} 分鐘後）` : ''}`,
         `模式：${s.mode === 'learned' ? '已優化' : '探索中'}  間隔：${s.current_interval_min} 分鐘`,
-        `觀察：${s.observations_total} 次  有結構比率：${(s.setup_hit_rate * 100).toFixed(0)}%（分數≥60）  開倉：${s.open_sim_trades} 筆`,
+        `本週觀察：${s.observations_weekly ?? s.observations_total} 次  有結構比率：${(s.setup_hit_rate * 100).toFixed(0)}%（分數≥60）  開倉：${s.open_sim_trades} 筆`,
+        `累計觀察：${s.observations_total} 次  本週起：${s.week_start || '-'}`,
       ];
       document.getElementById('schedulerStatus').innerHTML = lines.join('<br>');
     } catch {}
@@ -800,7 +809,15 @@
       entry_type: document.getElementById('fEntryType').value,
       key_area:   document.getElementById('fKeyArea').value,
       structure:  document.getElementById('fStructure').value,
-      rr_planned: parseFloat(document.getElementById('rrPreview').textContent) || 0,
+      rr_planned: (() => {
+        const entry = parseFloat(document.getElementById('fEntry').value) || 0;
+        const stop  = parseFloat(document.getElementById('fStop').value)  || 0;
+        const tgt   = parseFloat(document.getElementById('fTarget').value)|| 0;
+        const dir   = document.getElementById('fDir').value;
+        const risk = Math.abs(entry - stop);
+        const rew  = dir === 'long' ? tgt - entry : entry - tgt;
+        return risk > 0 ? Number((rew / risk).toFixed(2)) : 0;
+      })(),
     };
     if (!body.pair || !body.entry) { alert('請先填入交易對和入場價'); return; }
 

@@ -127,6 +127,17 @@ function getOrCreateGlobalUserKey(ref = {}) {
   return nextKey;
 }
 
+/**
+ * Check if a user ref already has a global key (without creating one).
+ * Returns true if known, false if this would be a brand-new user.
+ */
+function isKnownUser(ref = {}) {
+  if (!ref) return true; // unknown ref → don't flag as new
+  if (isDeveloperRef(ref)) return true;
+  const platformKeys = buildPlatformKeys(ref);
+  return platformKeys.some((key) => !!store.platformUserMap[key]);
+}
+
 function resolveStoredGlobalKey(identifier) {
   if (!identifier && identifier !== 0) return "global_unknown";
   const raw = String(identifier);
@@ -156,4 +167,5 @@ module.exports = {
   resolveStoredGlobalKey,
   getGlobalProfile,
   getPlatformUserMap,
+  isKnownUser,
 };

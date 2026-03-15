@@ -1,13 +1,12 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const { buildContext, generateAIReply } = require("../ai/pipeline");
 const { processEvent: orchestratorV2 }  = require("../ai/orchestrator");
 const { getStats: getWMStats }          = require("../ai/memory/working_memory");
 const { getCurrentMood, getRecentMoodEvents } = require("../ai/mood_engine");
 const { consolidateEpisodes } = require("../ai/episodic_store");
 
-module.exports = function createChatRouter({ ollamaClient }) {
+module.exports = function createChatRouter(_opts = {}) {
   const router = express.Router();
 
   router.post("/api/chat", async (req, res) => {
@@ -15,17 +14,17 @@ module.exports = function createChatRouter({ ollamaClient }) {
     if (!userInput || typeof userInput !== "string") return res.status(400).json({ error: "message is required" });
     try {
       const event = req.body?.event || {
-        type: req.body?.eventType || "message", content: userInput, text: userInput,
-        userId: req.body?.user_id || req.body?.userId || null, username: req.body?.username || null,
-        connector: req.body?.connector || "api", isPrivate: Boolean(req.body?.isPrivate),
-        channel: req.body?.channel || (req.body?.isPrivate ? "private" : "public"),
+        type:      req.body?.eventType || "message",
+        content:   userInput,
+        text:      userInput,
+        userId:    req.body?.user_id || req.body?.userId || null,
+        username:  req.body?.username || null,
+        connector: req.body?.connector || "api",
+        isPrivate: Boolean(req.body?.isPrivate ?? true),
+        channel:   req.body?.channel || (req.body?.isPrivate ? "private" : "group"),
+        role:      req.body?.role || "public_user",
       };
-      const history = Array.isArray(req.body?.history) ? req.body.history : [];
-      const context = buildContext(userInput, history, {
-        event, userId: req.body?.user_id || req.body?.userId || null,
-        username: req.body?.username || null, role: req.body?.role || "user",
-      });
-      const result = await generateAIReply(userInput, context, ollamaClient);
+      const result = await orchestratorV2(event);
       res.json({ reply: result.reply, skipped: Boolean(result.skipped), telemetry: result.telemetry });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });

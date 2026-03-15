@@ -1,5 +1,6 @@
-ï»¿const fs = require("fs");
+const fs = require("fs");
 const path = require("path");
+const { appendLine } = require("./memory_service");
 
 const memoryStore = require("../memory/memory_store");
 const { evictIfNeeded } = require("../memory/memory_eviction");
@@ -82,7 +83,9 @@ function getInteractionLogPath(platform = "unknown") {
 
 function appendInteraction(event) {
   ensureDirs();
-  fs.appendFileSync(getInteractionLogPath(event.platform), `${JSON.stringify(event)}\n`);
+  appendLine(getInteractionLogPath(event.platform), JSON.stringify(event)).catch((err) => {
+    console.warn("[memory_bus] appendInteraction failed:", err.message);
+  });
 }
 
 function writeSnapshots(globalUserKey, identityMemory) {
@@ -240,7 +243,7 @@ function updateIdentityMemory(event) {
 function updateMood(event) {
   if (!event.text) return;
   if (event.role === "developer" && event.direction === "incoming") {
-    const reason = "é–‹ç™¼è€…å‰›å‰›å›äº†æˆ‘ã€‚";
+    const reason = "¶}µoªÌ­è­è¦^¤F§Ú¡C";
     recordMoodEvent({
       type: "chat_positive",
       targetUser: event.globalUserKey,
@@ -258,7 +261,7 @@ function updateMood(event) {
   }
 
   if (event.channelType === "group" && event.direction === "incoming") {
-    const reason = "ç¾¤çµ„è£¡æœ‰äººåœ¨èªªè©±ã€‚";
+    const reason = "¸s²Õ¸Ì¦³¤H¦b»¡¸Ü¡C";
     recordMoodEvent({
       type: "group_activity",
       targetUser: event.globalUserKey,
@@ -281,13 +284,13 @@ function updateMood(event) {
       intensity: 0.2,
       decayRate: 0.97,
       timestamp: event.timestamp,
-      reason: "å‰›å‰›å’Œå°æ–¹æœ‰ä¸€æ®µç§èŠã€‚",
+      reason: "­è­è©M¹ï¤è¦³¤@¬q¨p²á¡C",
     });
     return;
   }
 
   if (event.channelType === "feed" && event.meaningful) {
-    const reason = event.liked ? "å‰›å‰›æ»‘åˆ°å¾ˆå–œæ­¡çš„è²¼æ–‡ã€‚" : "å‰›å‰›çœ‹åˆ°æœ‰é»æ„Ÿè¦ºçš„è²¼æ–‡ã€‚";
+    const reason = event.liked ? "­è­è·Æ¨ì«Ü³ßÅwªº¶K¤å¡C" : "­è­è¬İ¨ì¦³ÂI·PÄ±ªº¶K¤å¡C";
     recordMoodEvent({
       type: "feed_resonance",
       targetUser: null,
@@ -369,3 +372,5 @@ module.exports = {
   ingestEvent,
   emitEvent: ingestEvent,
 };
+
+

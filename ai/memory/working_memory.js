@@ -15,8 +15,9 @@ const STALE_HOURS = 12;        // Discard sessions with no activity in the last 
 
 const WORKING_DIR = path.join(__dirname, "../../memory/working");
 
-const sessions     = new Map();   // key → [{role, text, ts, ...}]
-const _writeTimers = new Map();   // debounce handles, one per session key
+const sessions      = new Map();   // key → [{role, text, ts, ...}]
+const _writeTimers  = new Map();   // debounce handles, one per session key
+const _resumptions  = new Map();   // key → last 3 turn pairs, survives stale pruning
 
 // ── Filename helpers ────────────────────────────────────────────────────────
 
@@ -52,7 +53,12 @@ function _loadAll() {
       // Check staleness by last message timestamp
       const lastTs = turns[turns.length - 1]?.ts || 0;
       if (lastTs < cutoff) {
-        // Stale — delete file, skip
+        // Stale — extract last 3 pairs as resumption context before pruning
+        const pairs = [];
+        for (let i = turns.length - 1; i >= 0 && pairs.length < 6; i--) {
+          pairs.unshift(turns[i]);
+        }
+        if (pairs.length > 0) _resumptions.set(key, pairs);
         try { fs.unlinkSync(path.join(WORKING_DIR, filename)); } catch { /* ignore */ }
         pruned++;
         continue;
@@ -147,4 +153,15 @@ function getStats() {
   };
 }
 
-module.exports = { makeSessionKey, getSession, addTurn, clearSession, getStats };
+/**
+ * Returns the last 3 turn-pairs (up to 6 messages) from a previously stale session.
+ * Used by context_builder to give the AI a memory anchor at conversation restart.
+ * Returns [] if no resumption context exists for this key.
+ *
+ * @param {string} key  — session key from makeSessionKey()
+ */
+function getResumptionContext(key) {
+  return _resumptions.get(key) || [];
+}
+
+module.exports = { makeSessionKey, getSession, addTurn, clearSession, getStats, getResumptionContext };

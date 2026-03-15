@@ -31,7 +31,26 @@ function getIdentityTruth(userRef) {
       bondType: memory.relationship?.bondType || "normal",
     },
     preferenceProfile: memory.preferenceProfile || { tags: {}, avoid: {}, evidence: [] },
+    impressions: memory.impressions?.text || null,
+    impressions_updated_at: memory.impressions?.updated_at || null,
   };
+}
+
+/**
+ * Persist a new impression text for this user.
+ * Called from orchestrator background (fire-and-forget).
+ */
+function savePersonImpression(userRef, impressionText) {
+  try {
+    const memory = persistentMemoryStore.getIdentityMemory(userRef);
+    if (!memory.impressions) memory.impressions = { text: null, updated_at: null };
+    memory.impressions.text       = String(impressionText).slice(0, 120);
+    memory.impressions.updated_at = Date.now();
+    // write back via memoryMap + persistMemory
+    const key = persistentMemoryStore.getIdentityMemoryKey(userRef);
+    persistentMemoryStore.memoryMap.set(key, memory);
+    persistentMemoryStore.persistMemory();
+  } catch { /* ignore */ }
 }
 
 function getConversationTruth(event = {}) {
@@ -82,4 +101,5 @@ module.exports = {
   listTopRelationships,
   addSharedMemory,
   removeSharedMemory,
+  savePersonImpression,
 };

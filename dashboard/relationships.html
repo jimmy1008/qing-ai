@@ -174,7 +174,6 @@
       margin-top: 8px;
       min-height: 18px;
     }
-    .topbar-nav .btn.back { background: #1a1a2e; }
   </style>
 </head>
 <body>
@@ -184,7 +183,14 @@
       <div class="meta-row"><span>管理晴晴對每位用戶的共同記憶</span></div>
     </div>
     <nav class="topbar-nav">
-      <button class="btn back" type="button" onclick="location.href='/'">← 儀表板</button>
+      <button class="btn" type="button" onclick="location.href='/'">← 總覽</button>
+      <div class="nav-sep"></div>
+      <button class="btn" type="button" onclick="location.href='/threads-moderation'">Threads 審核</button>
+      <button class="btn" type="button" onclick="location.href='/ai-cognition'">AI 認知</button>
+      <button class="btn" type="button" onclick="location.href='/lora-dashboard.html'">LoRA 訓練</button>
+      <button class="btn active" type="button">關係記憶</button>
+      <button class="btn" type="button" onclick="location.href='/emotion-log'">情緒日誌</button>
+      <button class="btn" type="button" onclick="location.href='/trading'">交易日誌</button>
     </nav>
   </header>
 

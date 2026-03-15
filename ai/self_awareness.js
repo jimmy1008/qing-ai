@@ -8,7 +8,7 @@
  * Severity: 0 (none) | 1 (minor) | 2 (medium) | 3 (critical)
  *
  * This module is pure — no side effects, no I/O.
- * It is consumed by pipeline.js telemetry and bot.js logs.
+ * It is consumed by orchestrator telemetry and bot.js logs.
  */
 
 // Hard-lock reason codes that indicate critical behavior deviation
