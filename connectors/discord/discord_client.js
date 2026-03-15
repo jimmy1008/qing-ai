@@ -30,6 +30,7 @@ const { synthesize }                        = require("../../ai/tts_engine");
 const { getOrCreateGlobalUserKey, isKnownUser } = require("../../ai/global_identity_map");
 const { logConnectorReady, appendEvent }    = require("../../ai/system_event_log");
 const { processReaction }                   = require("../../ai/feedback_receptor");
+const { maybeSamplePattern }               = require("../../ai/social_pattern_memory");
 
 // ── Known guilds (persistent, for new-guild detection) ───────────────────────
 const KNOWN_GUILDS_PATH = require("path").join(__dirname, "../../memory/known_guilds.json");
@@ -296,10 +297,13 @@ function startDiscordClient() {
     }
 
     // Track guild messages for group context
-    if (!isDM) registerGuildMessage(msg.channelId, { text: cleanText, username: msg.author.username });
+    if (!isDM) {
+      registerGuildMessage(msg.channelId, { text: cleanText, username: msg.author.username });
+      maybeSamplePattern(`dc_${msg.channelId}`, guildMsgRegistry.get(msg.channelId) || []);
+    }
 
     // P0 — build extra meta
-    const extraMeta = {};
+    const extraMeta = { groupId: !isDM ? `dc_${msg.channelId}` : null };
     const userRef = { platform: "discord", userId: msg.author.id, username: msg.author.username };
     if (!isOwner && !isKnownUser(userRef)) {
       extraMeta.firstMeeting = true;

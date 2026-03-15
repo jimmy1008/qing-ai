@@ -18,6 +18,7 @@ const { enqueueLLM } = require("../llm_queue");
 const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE, STYLE_CONTRACT } = require("../persona_core");
 const { applyBudget, trimRecentTurns, USER_PROMPT_CHAR_BUDGET } = require("./context_budget");
 const { getUnreadEvents, markAllRead } = require("../system_event_log");
+const { getSocialPatternHint }         = require("../social_pattern_memory");
 
 async function generatePersonaReply(contextPacket, intentResult, referenceResult, selectedMemories = []) {
   const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
@@ -249,6 +250,14 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
   // OPTIONAL — group recent messages (what others have been saying)
   if (meta.groupRecentMessages) {
     blocks.push({ priority: "optional", text: `[群裡最近有人在說]\n${meta.groupRecentMessages}\n（背景參考，不需要直接回應這些，但可以讓你感受一下群組氣氛）\n` });
+  }
+
+  // OPTIONAL — learned social pattern for this group/channel
+  if (meta.groupId) {
+    const patternHint = getSocialPatternHint(meta.groupId);
+    if (patternHint) {
+      blocks.push({ priority: "optional", text: patternHint + "\n" });
+    }
   }
 
   // OPTIONAL — long absence

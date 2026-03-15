@@ -16,6 +16,7 @@ const { startProactiveScheduler } = require("../../ai/telegram_proactive_schedul
 const { trackReply, lookupReply }  = require("./reaction_tracker");
 const { processReaction }          = require("../../ai/feedback_receptor");
 const { logConnectorReady }        = require("../../ai/system_event_log");
+const { maybeSamplePattern }       = require("../../ai/social_pattern_memory");
 
 const token = process.env.TG_TOKEN;
 const ollamaClient = createMultiModelClient(); // still used by proactive scheduler
@@ -196,7 +197,7 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot) {
       isCommand,
       // skipConversationBufferWrite: bot.js already writes to shortTerm via
       // ingestEvent (incoming + outgoing), so pipeline must not write again.
-      meta: { isDeveloper, skipConversationBufferWrite: true },
+      meta: { isDeveloper, skipConversationBufferWrite: true, groupId: channel === "group" ? `tg_${chatId}` : null },
       chat: { id: chatId, type: chatType },
       chatId,
       replyToMessage: msg.reply_to_message
@@ -529,6 +530,10 @@ bot.on("message", async (msg) => {
       userId: msg.from?.id || null,
       username: msg.from?.username || null,
     });
+    // Social learning: sample group communication pattern every N messages
+    const { groupRegistry } = require("./active_chat_registry");
+    const _recentMsgs = groupRegistry?.get?.(chatId)?.recentMessages || [];
+    maybeSamplePattern(`tg_${chatId}`, _recentMsgs);
   } else {
     const globalKey = getOrCreateGlobalUserKey({
       platform: "telegram",

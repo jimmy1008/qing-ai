@@ -27,6 +27,7 @@ function buildContextPacket(event) {
     recent_messages: recentMessages,
     current_message: extractCurrentMessage(event),
     meta: {
+      ...(event.meta || {}),              // pass through connector-set meta (firstMeeting, absenceDays, groupId, etc.)
       is_developer_present: checkDeveloperPresent(event),
       connector:   event.connector || null,
       channel:     event.channel  || "unknown",
