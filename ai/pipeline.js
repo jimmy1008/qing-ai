@@ -118,8 +118,12 @@ const { fixPronounDirection } = require("./guards/pronoun_fix");
 const { fetchSnapshot } = require("./modules/trading/tv_datafeed");
 const { getOpenSimulatedTrades } = require("./modules/trading/trade_journal");
 const { openChart } = require("./modules/trading/chart_viewer");
+const { getSchedulerStatus, getTradingMoodModifier, getLearningProgress, getCuriosity, getAnticipationHint } = require("./modules/trading/trading_scheduler");
+const _fsForTrading  = require("fs");
+const _pathForTrading = require("path");
+const _TRADES_MEM    = _pathForTrading.join(__dirname, "../memory/trades");
 
-const PIPELINE_TRADING_RE = /(btc|eth|sol|做多|做空|long|short|止損|止盈|開單|倉位|入場|市場結構|訂單塊|order.?block|fvg|bos|choch|dtfx|流動性|k線|技術分析|行情|漲跌|多單|空單|圖表|看盤|交易功能|交易模組|市場觀察|模擬交易|交易日誌|開倉|建倉)/i;
+const PIPELINE_TRADING_RE = /(btc|eth|sol|做多|做空|long|short|止損|止盈|開單|倉位|入場|市場結構|訂單塊|order.?block|fvg|bos|choch|dtfx|流動性|k線|技術分析|行情|漲跌|多單|空單|圖表|看盤|交易功能|交易模組|市場觀察|模擬交易|交易日誌|開倉|建倉|你的?策略|你在學|學交易|你的?勝率|你的?反思|你的?交易|交易進度|學了什麼|學到什麼|你的?模擬|你有沒有(在學|在交易)|你最近在學|你的(倉|看法|方法|心得))/i;
 const OPEN_CHART_RE       = /(打開圖表|開圖表|看圖表|看盤|開個圖|chart|k線圖|看k線|打開.*圖|圖表.*打開)/i;
 
 const DILEMMA_PATTERN = /(拖延|卡住|提不起勁|不知道該怎麼做|不知道怎麼辦|焦慮|壓力|累|stuck|procrast)/i;
@@ -338,6 +342,9 @@ function detectRepeatedJoke(reply = "", conversationMemory = {}) {
     const sim = charJaccard(currentNorm, prevNorm);
     if ((isJokeLike(current) || isJokeLike(prev)) && sim >= 0.68) return true;
     if (containsSameJokeHook(current, prev)) return true;
+    // 非笑話的高度相似回覆也觸發（例如交易分析、觀點型回答重複）
+    // 要求長度 > 25 字避免對短回應誤判
+    if (current.length > 25 && sim >= 0.75) return true;
   }
   return false;
 }
@@ -2099,11 +2106,12 @@ function buildAntiRepeatJokePrompt(userInput, currentReply, recentBotReplies = [
     recent || "(none)",
     "",
     "請重寫目前回覆，要求：",
-    "1. 不要重複前面用過的梗或句型",
+    "1. 不要重複前面用過的句型、梗、或說話結構",
     "2. 保持同樣語氣與角色，不要變成客服",
-    "3. 用新的角度回應，同樣簡短自然",
-    "4. 最多 2 句",
-    "5. 只輸出重寫後完整回覆",
+    "3. 用不同角度切入，同樣簡短自然",
+    "4. 如果前面說過數字（RSI、漲跌幅、價格），這次可以略去或換一個觀察點",
+    "5. 最多 2 句",
+    "6. 只輸出重寫後完整回覆",
   ].join("\n");
 }
 
@@ -2312,6 +2320,44 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
       const _sims = getOpenSimulatedTrades();
       const _simText = _sims.length > 0 ? _sims.map(t => `${t.pair} ${t.direction === "long" ? "多" : "空"} 入場 ${t.entry} 止損 ${t.stop} 目標 ${t.target}`).join("；") : "目前無開放模擬倉位";
       context._tradingBlock = (context._tradingBlock ? context._tradingBlock + "\n" : "") + `（你的模擬倉位：${_simText}）`;
+    } catch {}
+    // 晴的交易學習自我認知 — 策略摘要 + 統計 + 反思片段
+    try {
+      const _selfParts = ["策略：DTFX（市場結構 + OB/FVG + 流動性），學習中，尚未實盤"];
+      try {
+        const _sp = _pathForTrading.join(_TRADES_MEM, "stats.json");
+        if (_fsForTrading.existsSync(_sp)) {
+          const _s = JSON.parse(_fsForTrading.readFileSync(_sp, "utf8"));
+          if (_s.total > 0) _selfParts.push(`模擬成績：${_s.total} 筆  勝率 ${_s.winRate}%  平均RR ${_s.avgRR}`);
+        }
+      } catch {}
+      try {
+        const _rp = _pathForTrading.join(_TRADES_MEM, "reviews.jsonl");
+        if (_fsForTrading.existsSync(_rp)) {
+          const _lines = _fsForTrading.readFileSync(_rp, "utf8").split("\n").filter(Boolean);
+          if (_lines.length > 0) {
+            const _last = JSON.parse(_lines[_lines.length - 1]);
+            const _snip = String(_last.review || "").slice(0, 100).replace(/\n/g, " ");
+            if (_snip) _selfParts.push(`最近反思：${_snip}…`);
+          }
+        }
+      } catch {}
+      try {
+        const _sched = getSchedulerStatus();
+        if (_sched.active) _selfParts.push(`看盤：每 ${_sched.current_interval_min} 分鐘  累計 ${_sched.observations_total} 次觀察`);
+      } catch {}
+      try {
+        const _prog = getLearningProgress();
+        if (_prog) _selfParts.push(_prog);
+      } catch {}
+      try {
+        const _q = getCuriosity();
+        if (_q) _selfParts.push(`最近在想：${_q}`);
+      } catch {}
+      if (_selfParts.length > 1) {
+        context._tradingBlock = (context._tradingBlock ? context._tradingBlock + "\n" : "") +
+          `（你的交易學習狀況：${_selfParts.join("  |  ")}）`;
+      }
     } catch {}
     console.log("[TRADING] injected:", context._tradingBlock?.slice(0, 80));
   }
@@ -2707,9 +2753,18 @@ async function generateAIReply(userInput, context, ollamaClient, opts = {}) {
   const userPrompt = buildMemoryPrompt(identityMemory, coreMemory, conversationMemory, currentUserText, context);
   // Local LLMs have strong recency bias — inject trading block again right before model output.
   // This is the most salient position (after conversation history, just before generation).
+  // 交易情緒修飾語 + 期待感（不限主題，只在有值時注入）
+  let _moodHint = "";
+  try { _moodHint = getTradingMoodModifier() || ""; } catch { /* ignore */ }
+  let _anticipationHint = "";
+  try { _anticipationHint = getAnticipationHint() || ""; } catch { /* ignore */ }
+  const _bgHints = [_moodHint, _anticipationHint].filter(Boolean).join("\n");
+
   const effectiveUserPrompt = context._tradingBlock
-    ? userPrompt + `\n\n[即時系統通知] ${context._tradingBlock} ← 這是你自己剛看到的，可以隨口帶一句，不需要像報告一樣逐一列出數字。`
-    : userPrompt;
+    ? userPrompt + `\n\n${context._tradingBlock}` + (_bgHints ? `\n${_bgHints}` : "")
+    : _bgHints
+      ? userPrompt + `\n\n${_bgHints}`
+      : userPrompt;
   const finalPrompt = `${systemPrompt}\n\n${effectiveUserPrompt}`;
   const promptTokenEstimate = estimatePromptTokens(finalPrompt);
   const promptTooLarge = promptTokenEstimate > PROMPT_WARN_TOKEN_THRESHOLD;

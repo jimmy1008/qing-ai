@@ -41,6 +41,8 @@ const SETUPS_FILE      = path.join(__dirname, "../../../memory/trades/active_set
 const REVIEWS_FILE     = path.join(__dirname, "../../../memory/trades/reviews.jsonl");
 const STATS_FILE       = path.join(__dirname, "../../../memory/trades/stats.json");
 const HYPOTHESES_FILE  = path.join(__dirname, "../../../memory/trades/hypotheses.jsonl");
+const WEEKLY_LOG_FILE  = path.join(__dirname, "../../../memory/trades/weekly_obs_log.jsonl");
+const VIEWS_FILE       = path.join(__dirname, "../../../memory/trades/sim_views.jsonl");
 
 // ── 狀態 ──────────────────────────────────────────────────────────────────────
 
@@ -60,8 +62,12 @@ let _startedAt = null;
 let _currentCuriosity = null;
 // 即將到來的高影響事件提示（每次觀察週期更新，注入到對話情緒背景）
 let _anticipationHint = null;
+// 觀察計數器（持久化）
+let _totalObservations = 0;  // 累計總觀察次數（不重置）
+let _weeklyObs         = 0;  // 本週觀察次數（每週一 00:00 台灣時間重置）
+let _weekStart         = null; // 本週開始的 ISO 字串（例："2026-03-09"）
 
-const _history      = [];  // 觀察歷史（最多 100）
+const _history      = [];  // 觀察歷史（最多 500）
 const _activeSetups = [];  // 合格 setup 快取（最多 10）
 
 // ── 持久化 ────────────────────────────────────────────────────────────────────
@@ -77,7 +83,10 @@ function loadRhythm() {
     _consecutiveWins       = Number(d.consecutive_wins)    || 0;
     _startedAt             = d.started_at  || null;
     _currentCuriosity      = d.curiosity   || null;
-    if (Array.isArray(d.history)) _history.push(...d.history.slice(-50));
+    _totalObservations     = Number(d.total_observations) || 0;
+    _weeklyObs             = Number(d.weekly_obs)         || 0;
+    _weekStart             = d.week_start  || null;
+    if (Array.isArray(d.history)) _history.push(...d.history.slice(-100));
     console.log(`[scheduler] rhythm loaded: mode=${_mode} interval=${_intervalMin}min history=${_history.length} consecutive_losses=${_consecutiveLosses}`);
   } catch { /* 從頭開始 */ }
 }
@@ -92,7 +101,10 @@ function saveRhythm() {
       consecutive_wins:    _consecutiveWins,
       started_at:          _startedAt,
       curiosity:           _currentCuriosity,
-      history: _history.slice(-50), saved_at: Date.now(),
+      total_observations:  _totalObservations,
+      weekly_obs:          _weeklyObs,
+      week_start:          _weekStart,
+      history: _history.slice(-100), saved_at: Date.now(),
     }, null, 2));
   } catch { /* ignore */ }
 }
@@ -126,6 +138,48 @@ function isObservationWindow() {
 
 function minutesUntilWindow() {
   return 0; // 24/7 — 永遠在觀察窗口內
+}
+
+// 取得台灣時間本週一 00:00 的日期字串（YYYY-MM-DD）
+function getCurrentWeekStart() {
+  const tw = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const day = tw.getDay(); // 0=Sun, 1=Mon...
+  const diff = (day === 0 ? -6 : 1 - day); // 往回到週一
+  tw.setDate(tw.getDate() + diff);
+  return tw.toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+
+// 每週一 00:00 台灣時間重置本週觀察計數，並記錄到 weekly_obs_log.jsonl
+function checkWeeklyReset() {
+  try {
+    const currentWeek = getCurrentWeekStart();
+    if (_weekStart === currentWeek) return; // 同一週，不重置
+
+    if (_weekStart !== null && _weeklyObs > 0) {
+      // 記錄上週的統計
+      const hitCount = _history.filter(h => h.score >= SETUP_THRESHOLD).length;
+      const hitRate  = _weeklyObs > 0 ? Number((hitCount / Math.min(_weeklyObs, _history.length)).toFixed(3)) : 0;
+      const simStats = getSimulatedStats();
+      const entry = {
+        week_start:      _weekStart,
+        week_end:        currentWeek,
+        observations:    _weeklyObs,
+        setup_hits:      hitCount,
+        setup_hit_rate:  hitRate,
+        sim_total:       simStats.total,
+        sim_win_rate:    simStats.winRate,
+        sim_avg_rr:      simStats.avgRR,
+        logged_at:       new Date().toISOString(),
+      };
+      fs.mkdirSync(path.dirname(WEEKLY_LOG_FILE), { recursive: true });
+      fs.appendFileSync(WEEKLY_LOG_FILE, JSON.stringify(entry) + "\n", "utf8");
+      console.log(`[scheduler] weekly reset: week=${_weekStart} obs=${_weeklyObs} setup_hits=${hitCount} → logged`);
+    }
+
+    _weekStart = currentWeek;
+    _weeklyObs = 0;
+    saveRhythm();
+  } catch { /* non-blocking */ }
 }
 
 // ── 頻率探索與優化 ────────────────────────────────────────────────────────────
@@ -364,6 +418,61 @@ async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score,
   return trade;
 }
 
+// ── 模擬看法記錄（不開倉，只記觀點）────────────────────────────────────────
+
+/**
+ * 發現合格 setup 時，記錄晴的模擬看法到 sim_views.jsonl。
+ * 不建立 trade journal 條目，只保存「如果要進場，方向/價位/RR 是這樣」的觀點快照。
+ */
+function logSimView(asset, price, bias, keyLevels, structure, score, grade, bestTf) {
+  try {
+    if (!bias || bias === "neutral") return;
+    const levels = calcSimLevels(price, bias, keyLevels);
+    if (levels.rr < 1.0) return; // 太差的 setup 不記
+
+    const obs  = keyLevels?.order_blocks || [];
+    const fvgs = keyLevels?.fvgs || [];
+    let key_area = "structure";
+    if (obs.length > 0)       key_area = "OB";
+    else if (fvgs.length > 0) key_area = "FVG";
+
+    const h1 = (structure?.["1H"]) || {};
+    const structDesc = h1.trend ? `${h1.trend} | ${(h1.pattern || []).join("/")}` : "multi-TF confluence";
+
+    const view = {
+      asset,
+      observed_at:   Date.now(),
+      price,
+      bias,
+      direction:     levels.direction,
+      entry:         levels.entry,
+      stop:          levels.stop,
+      target:        levels.target,
+      rr:            Number(levels.rr.toFixed(2)),
+      score,
+      grade,
+      best_entry_tf: bestTf || null,
+      key_area,
+      structure_desc: structDesc,
+    };
+
+    fs.mkdirSync(path.dirname(VIEWS_FILE), { recursive: true });
+    fs.appendFileSync(VIEWS_FILE, JSON.stringify(view) + "\n", "utf8");
+    console.log(`[scheduler] sim view logged: ${asset} ${levels.direction} entry=${levels.entry} stop=${levels.stop} target=${levels.target} RR=${levels.rr.toFixed(2)} score=${score}`);
+  } catch { /* non-blocking */ }
+}
+
+/**
+ * 讀取最近 N 條模擬看法（最新的在前）
+ */
+function getRecentSimViews(n = 6) {
+  try {
+    if (!fs.existsSync(VIEWS_FILE)) return [];
+    const lines = fs.readFileSync(VIEWS_FILE, "utf8").split("\n").filter(Boolean);
+    return lines.slice(-n).reverse().map(l => JSON.parse(l));
+  } catch { return []; }
+}
+
 // ── 自動反思 + 統計持久化 ────────────────────────────────────────────────────
 
 /**
@@ -416,6 +525,8 @@ function saveStats() {
 async function runObservationCycle() {
   if (!_active) return;
 
+  checkWeeklyReset(); // 每次觀察前檢查是否跨週
+
   if (!isObservationWindow()) {
     // 永遠不應進入此分支（24/7 模式）
     scheduleNext(5 * 60 * 1000);
@@ -445,12 +556,13 @@ async function runObservationCycle() {
       // ── Step 3: 記錄觀察歷史 ────────────────────────────────────────────
       const entry = { asset, timestamp: Date.now(), score, grade, bias, best_entry_tf: bestTf, interval_min: intervalMin, price };
       _history.push(entry);
-      if (_history.length > 100) _history.splice(0, _history.length - 100);
+      if (_history.length > 500) _history.splice(0, _history.length - 500);
+      _totalObservations++;
+      _weeklyObs++;
 
       if (score >= SETUP_THRESHOLD && bias !== "neutral") {
-        // ── Step 4a: 有 setup → 存資料（不在背景呼叫 LLM，避免和對話搶 Ollama）──
-        // LLM 交易想法只在用戶主動透過 /api/trading/observe/:asset 請求時才生成。
-        console.log(`[scheduler] setup: ${asset} score=${score} grade=${grade} bias=${bias} — saving (no background LLM).`);
+        // ── Step 4a: 有 setup → 存 setup 快取 + 記錄模擬看法（不開倉）──
+        console.log(`[scheduler] setup: ${asset} score=${score} grade=${grade} bias=${bias} — logging view (no position).`);
         try {
           _activeSetups.unshift({
             asset, score, grade, bias, best_entry_tf: bestTf,
@@ -462,14 +574,14 @@ async function runObservationCycle() {
           if (_activeSetups.length > 10) _activeSetups.splice(10);
           saveActiveSetups();
 
-          // ── Step 4b: 自動建立模擬倉位 ──────────────────────────────────
-          await autoOpenSimTrade(
+          // ── Step 4b: 記錄模擬看法（不建立 trade journal 條目）──────────
+          logSimView(
             asset, quick.price, bias,
             quick.key_levels, quick.structure,
-            score, grade, bestTf, null
+            score, grade, bestTf
           );
         } catch (err) {
-          console.error(`[scheduler] sim error for ${asset}:`, err.message);
+          console.error(`[scheduler] sim view error for ${asset}:`, err.message);
         }
       } else {
         // ── Step 4c: 無 setup — 靜默觀察 ──────────────────────────────
@@ -551,13 +663,13 @@ function getTradingMoodModifier() {
  * @returns {string}
  */
 function getLearningProgress() {
-  const obs = _history.length;
-  if (!_startedAt) return `學習 DTFX 中，已觀察 ${obs} 次`;
+  const obs = _totalObservations || _history.length;
+  if (!_startedAt) return `學習 DTFX 中，累計觀察 ${obs} 次`;
   const daysElapsed = Math.floor((Date.now() - _startedAt) / (1000 * 60 * 60 * 24));
   if (daysElapsed < 1)  return `剛開始學 DTFX，今天第一天，已觀察 ${obs} 次`;
-  if (daysElapsed < 7)  return `學習第 ${daysElapsed + 1} 天，已觀察 ${obs} 次`;
-  if (daysElapsed < 30) return `學習約 ${Math.floor(daysElapsed / 7)} 週（${daysElapsed} 天），已觀察 ${obs} 次`;
-  return `學習約 ${Math.floor(daysElapsed / 30)} 個月，已觀察 ${obs} 次`;
+  if (daysElapsed < 7)  return `學習第 ${daysElapsed + 1} 天，累計觀察 ${obs} 次`;
+  if (daysElapsed < 30) return `學習約 ${Math.floor(daysElapsed / 7)} 週（${daysElapsed} 天），累計觀察 ${obs} 次`;
+  return `學習約 ${Math.floor(daysElapsed / 30)} 個月，累計觀察 ${obs} 次`;
 }
 
 /**
@@ -640,6 +752,7 @@ function startScheduler() {
     _startedAt = Date.now();
     saveRhythm();
   }
+  checkWeeklyReset(); // 若跨週重啟則自動記錄並重置
   if (!_currentCuriosity) refreshCuriosity();
   console.log(`[scheduler] 晴 trading scheduler started (mode=${_mode}, interval=${_intervalMin}min, started_at=${new Date(_startedAt).toISOString()})`);
   _timer = setTimeout(runObservationCycle, 10 * 1000);
@@ -658,14 +771,18 @@ function getSchedulerStatus() {
   const tw = getTW();
   const hitCount  = _history.filter(h => h.score >= SETUP_THRESHOLD).length;
   const openSims  = getOpenSimulatedTrades().length;
+  const weeklyHitCount = _history.slice(-_weeklyObs).filter(h => h.score >= SETUP_THRESHOLD).length;
   return {
     active:               _active,
     in_window:            true, // 24/7
     mode:                 _mode,
     current_interval_min: _intervalMin,
-    observations_total:   _history.length,
+    observations_total:   _totalObservations,
+    observations_weekly:  _weeklyObs,
+    week_start:           _weekStart,
     setup_hits:           hitCount,
-    setup_hit_rate:       _history.length > 0 ? Number((hitCount / _history.length).toFixed(3)) : 0, // 有結構比率（score≥60），非交易勝率
+    setup_hits_weekly:    weeklyHitCount,
+    setup_hit_rate:       _weeklyObs > 0 ? Number((weeklyHitCount / _weeklyObs).toFixed(3)) : 0, // 本週有結構比率
     active_setups:        _activeSetups.length,
     open_sim_trades:      openSims,
     taiwan_time:          tw.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),
@@ -687,4 +804,5 @@ async function getNewsStatus() {
 module.exports = {
   startScheduler, stopScheduler, getSchedulerStatus, getActiveSetups, getNewsStatus,
   getTradingMoodModifier, getLearningProgress, getCuriosity, getAnticipationHint,
+  getRecentSimViews,
 };

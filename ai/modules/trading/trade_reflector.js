@@ -150,7 +150,7 @@ async function llmCall(prompt) {
       stream: false,
       think:  false,
       messages: [{ role: "user", content: prompt }],
-    }, { timeout: TIMEOUT_MS }), 3);
+    }, { timeout: TIMEOUT_MS }), 3, "background");
 
     const text = String(resp.data?.message?.content || "").trim();
     return text || "（無法生成反思，請稍後再試）";

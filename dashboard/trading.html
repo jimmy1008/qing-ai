@@ -637,7 +637,8 @@
         `台灣時間：${s.taiwan_time}`,
         `狀態：${s.is_weekend ? '週末休息' : s.in_window ? '看盤中' : '非看盤時間'}${s.next_window_min > 0 ? `（${s.next_window_min} 分鐘後）` : ''}`,
         `模式：${s.mode === 'learned' ? '已優化' : '探索中'}  間隔：${s.current_interval_min} 分鐘`,
-        `觀察：${s.observations_total} 次  有結構比率：${(s.setup_hit_rate * 100).toFixed(0)}%（分數≥60）  開倉：${s.open_sim_trades} 筆`,
+        `本週觀察：${s.observations_weekly ?? s.observations_total} 次  有結構比率：${(s.setup_hit_rate * 100).toFixed(0)}%（分數≥60）  開倉：${s.open_sim_trades} 筆`,
+        `累計觀察：${s.observations_total} 次  本週起：${s.week_start || '-'}`,
       ];
       document.getElementById('schedulerStatus').innerHTML = lines.join('<br>');
     } catch {}

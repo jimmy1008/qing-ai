@@ -55,14 +55,15 @@ const { repairReply }          = require("./modules/repair_rewriter");
 const { makeSessionKey, addTurn } = require("./memory/working_memory");
 
 // ── Phase B: relationship + mood ─────────────────────────────────────────────
-const { getIdentityTruth }    = require("./memory_store");
+const { getIdentityTruth, savePersonImpression } = require("./memory_store");
 const { getFamiliarityBand }  = require("./familiarity_engine");
 const { getCurrentMood }      = require("./mood_engine");
 const { getInertiaState }     = require("./inertia_engine");
 const { getEmotionalResidue } = require("./emotional_residue");
+const { getCurrentActivity }  = require("./daily_activity");
+const { recordMessage: recordTopicHeat, getHeatModifier } = require("./topic_heat");
 const { fetchSnapshot }           = require("./modules/trading/tv_datafeed");
-const { getOpenSimulatedTrades }  = require("./modules/trading/trade_journal");
-const { getSchedulerStatus, getTradingMoodModifier, getLearningProgress, getCuriosity, getAnticipationHint } = require("./modules/trading/trading_scheduler");
+const { getSchedulerStatus, getTradingMoodModifier, getLearningProgress, getCuriosity, getAnticipationHint, getRecentSimViews } = require("./modules/trading/trading_scheduler");
 const axios = require("axios");
 const fs    = require("fs");
 const path  = require("path");
@@ -143,6 +144,35 @@ function buildTradingSelfContext() {
 
 const MAX_RETRY = 2; // max generation attempts before fallback
 
+const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
+const fastModel = process.env.LLM_FAST_MODEL || "qwen2.5:3b";
+
+/**
+ * Background: generate 晴's subjective impression of a person from their known facts.
+ * Uses fast model, non-blocking. Called every 15 interactions.
+ */
+async function generatePersonImpression(identity, userRef) {
+  const facts = (identity.knownFacts || []).slice(0, 6).join("、");
+  if (!facts) return;
+  const prompt = [
+    `以下是關於某人的已知事實：${facts}`,
+    `熟悉度：${identity.relationship?.familiarity || 0}/100`,
+    ``,
+    `用繁體中文一句話說說晴對這個人的印象（主觀、自然、不超過40字）。`,
+    `例：他每次說的都很表面，但偶爾會突然說一句很真的話。`,
+    `只輸出那一句話，不要解釋。`,
+  ].join("\n");
+
+  try {
+    const resp = await axios.post(`${ollamaUrl}/api/generate`, {
+      model: fastModel, prompt, stream: false,
+      options: { temperature: 0.7, num_predict: 60 },
+    }, { timeout: 15000 });
+    const text = String(resp.data?.response || "").trim().split("\n")[0];
+    if (text && text.length > 5) savePersonImpression(userRef, text);
+  } catch { /* silent */ }
+}
+
 /**
  * Main entry point.
  * @param {object} event         - Raw platform event (Telegram / Threads / voice / etc.)
@@ -180,7 +210,13 @@ async function processEvent(event, _ollamaClient) {
         knownFacts:       (identity.knownFacts || []).slice(0, 4),
         role:             identity.role || "public_user",
         nickname:         identity.nickname || contextPacket.speaker.name || "",
+        impression:       identity.impressions || null, // 晴對這個人的主觀印象
       };
+
+      // Background: refresh impression every 15 interactions (non-blocking, fast model)
+      if (rel.interactionCount > 0 && rel.interactionCount % 15 === 0 && identity.knownFacts?.length > 0) {
+        generatePersonImpression(identity, { userId }).catch(() => {});
+      }
 
       // Emotional residue (lingering tone from past interactions)
       const globalKey = userId;
@@ -204,6 +240,14 @@ async function processEvent(event, _ollamaClient) {
       energy:   moodState.energy   ?? 0.5,
       openness: moodState.openness ?? 0.5,
     };
+
+    // Daily activity — what 晴 was doing before this conversation
+    contextPacket.meta.daily_activity = getCurrentActivity(moodState.mood);
+
+    // Topic heat — fatigue modifier for repeated topics
+    recordTopicHeat(text);
+    const heatMod = getHeatModifier(text);
+    if (heatMod) contextPacket.meta.topic_heat_modifier = heatMod;
   } catch { /* Phase B enrichment is non-blocking */ }
 
   // ── Module 3: Reference resolution (Level 1+) ─────────────────────────────
@@ -232,16 +276,16 @@ async function processEvent(event, _ollamaClient) {
       if (lines.length) contextPacket.meta.market_context = lines.join("\n");
     } catch { /* non-blocking */ }
 
-    // Inject open simulated positions
+    // Inject recent sim views (mental notes, no open positions)
     try {
-      const openSims = getOpenSimulatedTrades();
-      if (openSims.length > 0) {
+      const views = getRecentSimViews(4);
+      if (views.length > 0) {
         const tw = d => new Date(d).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-        contextPacket.meta.sim_positions = openSims.map(t =>
-          `${t.pair} ${t.direction === "long" ? "多" : "空"}  入場 ${t.entry}  止損 ${t.stop}  目標 ${t.target}  計畫RR ${t.rr_planned}  建倉 ${tw(t.created_at)}`
+        contextPacket.meta.sim_positions = views.map(v =>
+          `${v.asset} ${v.direction === "long" ? "看多" : "看空"}  假設入場 ${v.entry}  止損 ${v.stop}  目標 ${v.target}  RR ${v.rr}  ${tw(v.observed_at)}`
         ).join("\n");
       } else {
-        contextPacket.meta.sim_positions = "目前無開放模擬倉位";
+        contextPacket.meta.sim_positions = null; // 沒有看法就不注入
       }
     } catch { /* non-blocking */ }
 
