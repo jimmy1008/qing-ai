@@ -64,6 +64,7 @@ const { getCurrentActivity }  = require("./daily_activity");
 const { recordMessage: recordTopicHeat, getHeatModifier } = require("./topic_heat");
 const { fetchSnapshot }           = require("./modules/trading/tv_datafeed");
 const { getSchedulerStatus, getTradingMoodModifier, getLearningProgress, getCuriosity, getAnticipationHint, getRecentSimViews } = require("./modules/trading/trading_scheduler");
+const { getOpenTrades, getOpenSimulatedTrades } = require("./modules/trading/trade_journal");
 const axios = require("axios");
 const fs    = require("fs");
 const path  = require("path");
@@ -276,7 +277,29 @@ async function processEvent(event, _ollamaClient) {
       if (lines.length) contextPacket.meta.market_context = lines.join("\n");
     } catch { /* non-blocking */ }
 
-    // Inject recent sim views (mental notes, no open positions)
+    // Inject open real trades (if any)
+    try {
+      const openReal = getOpenTrades();
+      if (openReal.length > 0) {
+        const tw = d => new Date(d).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        contextPacket.meta.open_real_trades = openReal.map(t =>
+          `${t.pair} ${t.direction === "long" ? "做多" : "做空"}  入場 ${t.entry}  止損 ${t.stop}  目標 ${t.target}  RR ${t.rr_planned ?? "?"}  開倉 ${tw(t.created_at)}  ${t.reason ? "理由：" + t.reason.slice(0, 60) : ""}`
+        ).join("\n");
+      }
+    } catch { /* non-blocking */ }
+
+    // Inject open sim trades (active mental positions)
+    try {
+      const openSim = getOpenSimulatedTrades();
+      if (openSim.length > 0) {
+        const tw = d => new Date(d).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        contextPacket.meta.open_sim_trades = openSim.map(t =>
+          `${t.pair} ${t.direction === "long" ? "做多" : "做空"}  假設入場 ${t.entry}  止損 ${t.stop}  目標 ${t.target}  RR ${t.rr_planned ?? "?"}  ${tw(t.created_at)}  ${t.reason ? "理由：" + t.reason.slice(0, 60) : ""}`
+        ).join("\n");
+      }
+    } catch { /* non-blocking */ }
+
+    // Inject recent sim views (market observations / mental notes)
     try {
       const views = getRecentSimViews(4);
       if (views.length > 0) {
@@ -285,7 +308,7 @@ async function processEvent(event, _ollamaClient) {
           `${v.asset} ${v.direction === "long" ? "看多" : "看空"}  假設入場 ${v.entry}  止損 ${v.stop}  目標 ${v.target}  RR ${v.rr}  ${tw(v.observed_at)}`
         ).join("\n");
       } else {
-        contextPacket.meta.sim_positions = null; // 沒有看法就不注入
+        contextPacket.meta.sim_positions = null;
       }
     } catch { /* non-blocking */ }
 

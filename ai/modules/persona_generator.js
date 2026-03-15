@@ -25,7 +25,9 @@ async function generatePersonaReply(contextPacket, intentResult, referenceResult
   const model     = process.env.LLM_MODEL   || "qwen3:8b";
 
   const systemPrompt = buildSystemPrompt(contextPacket.scene, intentResult, referenceResult, contextPacket.meta || {});
-  const userPrompt   = buildUserPrompt(contextPacket, referenceResult, selectedMemories);
+  // Expose intent to buildUserPrompt via meta so priority-based blocks can adapt
+  const metaWithIntent = { ...(contextPacket.meta || {}), _intent: intentResult?.intent || null };
+  const userPrompt   = buildUserPrompt({ ...contextPacket, meta: metaWithIntent }, referenceResult, selectedMemories);
 
   // priority 1 — main reply generation, same as conversation
   const resp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/chat`, {
@@ -275,19 +277,32 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
     blocks.push({ priority: "optional", text: `（剛才：${meta.daily_activity}）\n` });
   }
 
-  // OPTIONAL — market context
-  if (meta.market_context) {
-    blocks.push({ priority: "optional", text: `（你剛瞄了一眼市場：${meta.market_context.replace(/\n/g, " / ")}）\n` });
-  }
+  // ── Trading context — priority depends on intent ──────────────────────────
+  // When someone is asking about 晴's positions / views, upgrade to "low" so
+  // the blocks survive context budget trimming. Otherwise stay "optional".
+  const isTrading = meta._intent === "trading_research";
+  const tradingPriority = isTrading ? "low" : "optional";
 
-  // OPTIONAL — sim positions
+  // Build a single structured position block when there is actual position data
+  const positionLines = [];
+  if (meta.open_real_trades) {
+    positionLines.push(`[實盤倉位]\n${meta.open_real_trades}`);
+  }
+  if (meta.open_sim_trades) {
+    positionLines.push(`[模擬倉位（掛單中）]\n${meta.open_sim_trades}`);
+  }
   if (meta.sim_positions) {
-    blocks.push({ priority: "optional", text: `（你最近的看法快照：${meta.sim_positions.replace(/\n/g, " / ")}）\n` });
+    positionLines.push(`[近期市場看法]\n${meta.sim_positions}`);
+  }
+  if (positionLines.length > 0) {
+    blocks.push({ priority: tradingPriority, text: `[你的倉位與市場看法]\n${positionLines.join("\n\n")}\n（以上是你目前的倉位紀錄和看法快照，對方問到時可以自然分享，未問到則不主動提）\n` });
   }
 
-  // OPTIONAL — trading self + mood + anticipation
+  if (meta.market_context) {
+    blocks.push({ priority: tradingPriority, text: `（你剛瞄了一眼市場：${meta.market_context.replace(/\n/g, " / ")}）\n` });
+  }
   if (meta.trading_self) {
-    blocks.push({ priority: "optional", text: `（你的交易學習狀況：${meta.trading_self}）\n` });
+    blocks.push({ priority: tradingPriority, text: `（你的交易學習狀況：${meta.trading_self}）\n` });
   }
   if (meta.trading_mood) {
     blocks.push({ priority: "optional", text: `${meta.trading_mood}\n` });

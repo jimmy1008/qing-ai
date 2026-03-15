@@ -241,6 +241,13 @@ function groupBy(arr, key, statsFn) {
 }
 
 /**
+ * Get all open real trades (simulated !== true && status: "open").
+ */
+function getOpenTrades() {
+  return loadAll().filter(t => t.simulated !== true && t.status === "open");
+}
+
+/**
  * Get all open simulated trades (simulated: true && status: "open").
  */
 function getOpenSimulatedTrades() {
@@ -274,5 +281,5 @@ function clearSimulatedTrades() {
 
 module.exports = {
   logTrade, updateTrade, getRecentTrades, getTrade, getClosedTrades, getStats,
-  getOpenSimulatedTrades, getSimulatedStats, clearSimulatedTrades,
+  getOpenTrades, getOpenSimulatedTrades, getSimulatedStats, clearSimulatedTrades,
 };
