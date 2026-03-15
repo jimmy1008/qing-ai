@@ -197,11 +197,11 @@ async function fetchFundingOI(asset) {
   ]);
 
   const fundingRate = fundingRes.status === "fulfilled"
-    ? Number(parseFloat(fundingRes.value.data?.lastFundingRate || 0) * 100).toFixed(4)
+    ? Number((parseFloat(fundingRes.value.data?.lastFundingRate || 0) * 100).toFixed(4))
     : null;
 
   const openInterest = oiRes.status === "fulfilled"
-    ? Number(parseFloat(oiRes.value.data?.openInterest || 0)).toFixed(2)
+    ? Number(parseFloat(oiRes.value.data?.openInterest || 0).toFixed(2))
     : null;
 
   const markPrice = fundingRes.status === "fulfilled"
@@ -210,8 +210,8 @@ async function fetchFundingOI(asset) {
 
   return {
     symbol:        sym,
-    funding_rate:  fundingRate !== null ? parseFloat(fundingRate) : null,  // % (e.g. 0.0100)
-    open_interest: openInterest !== null ? parseFloat(openInterest) : null, // in BTC/ETH
+    funding_rate:  fundingRate,   // number, % (e.g. 0.0100)
+    open_interest: openInterest,  // number, in BTC/ETH
     mark_price:    markPrice,
     next_funding:  fundingRes.status === "fulfilled" ? fundingRes.value.data?.nextFundingTime : null,
     fetched_at:    Date.now(),

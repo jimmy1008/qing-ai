@@ -617,7 +617,7 @@
 
     const bySession = s.bySession || {};
     const lines = Object.entries(bySession).map(([ses, d]) =>
-      `${ses}: 勝率 ${d.winRate}%  RR ${d.avgRR}  (${d.total} 筆)`
+      `${ses}: 勝率 ${d.winRate ?? '-'}%  RR ${d.avgRR ?? '-'}  (${d.total ?? 0} 筆)`
     );
     document.getElementById('sessionStats').textContent = lines.join('  |  ');
 
@@ -809,7 +809,15 @@
       entry_type: document.getElementById('fEntryType').value,
       key_area:   document.getElementById('fKeyArea').value,
       structure:  document.getElementById('fStructure').value,
-      rr_planned: parseFloat(document.getElementById('rrPreview').textContent) || 0,
+      rr_planned: (() => {
+        const entry = parseFloat(document.getElementById('fEntry').value) || 0;
+        const stop  = parseFloat(document.getElementById('fStop').value)  || 0;
+        const tgt   = parseFloat(document.getElementById('fTarget').value)|| 0;
+        const dir   = document.getElementById('fDir').value;
+        const risk = Math.abs(entry - stop);
+        const rew  = dir === 'long' ? tgt - entry : entry - tgt;
+        return risk > 0 ? Number((rew / risk).toFixed(2)) : 0;
+      })(),
     };
     if (!body.pair || !body.entry) { alert('請先填入交易對和入場價'); return; }
 

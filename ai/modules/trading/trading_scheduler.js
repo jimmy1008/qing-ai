@@ -667,7 +667,7 @@ function getLearningProgress() {
   if (!_startedAt) return `學習 DTFX 中，累計觀察 ${obs} 次`;
   const daysElapsed = Math.floor((Date.now() - _startedAt) / (1000 * 60 * 60 * 24));
   if (daysElapsed < 1)  return `剛開始學 DTFX，今天第一天，已觀察 ${obs} 次`;
-  if (daysElapsed < 7)  return `學習第 ${daysElapsed + 1} 天，累計觀察 ${obs} 次`;
+  if (daysElapsed < 7)  return `學習第 ${daysElapsed} 天，累計觀察 ${obs} 次`;
   if (daysElapsed < 30) return `學習約 ${Math.floor(daysElapsed / 7)} 週（${daysElapsed} 天），累計觀察 ${obs} 次`;
   return `學習約 ${Math.floor(daysElapsed / 30)} 個月，累計觀察 ${obs} 次`;
 }
@@ -771,10 +771,15 @@ function getSchedulerStatus() {
   const tw = getTW();
   const hitCount  = _history.filter(h => h.score >= SETUP_THRESHOLD).length;
   const openSims  = getOpenSimulatedTrades().length;
-  const weeklyHitCount = _history.slice(-_weeklyObs).filter(h => h.score >= SETUP_THRESHOLD).length;
+  // Correct slice: when _weeklyObs > _history.length, slice from 0 (not from negative index)
+  const weeklySlice = _history.slice(Math.max(0, _history.length - _weeklyObs));
+  const weeklyHitCount = weeklySlice.filter(h => h.score >= SETUP_THRESHOLD).length;
+  const dayOfWeek = tw.getDay(); // 0=Sun, 6=Sat
+  const is_weekend = dayOfWeek === 0 || dayOfWeek === 6;
   return {
     active:               _active,
     in_window:            true, // 24/7
+    is_weekend,
     mode:                 _mode,
     current_interval_min: _intervalMin,
     observations_total:   _totalObservations,

@@ -274,7 +274,7 @@ function getSimulatedStats() {
  */
 function clearSimulatedTrades() {
   const all  = loadAll();
-  const keep = all.filter(t => t.simulated !== true && !t.sim_status);
+  const keep = all.filter(t => t.simulated !== true);
   saveAll(keep);
   return all.length - keep.length;
 }

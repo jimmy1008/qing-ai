@@ -183,16 +183,18 @@ async function generateTradeIdea(report) {
 
   // Summarize key levels for prompt
   const obList = (report.key_levels.order_blocks || [])
+    .filter(ob => ob.bottom != null && ob.top != null)
     .map(ob => `  · ${ob.type} ${ob.bottom}–${ob.top}`)
     .join("\n") || "  （無明確 OB）";
 
   const fvgList = (report.key_levels.fvgs || [])
+    .filter(fvg => fvg.bottom != null && fvg.top != null)
     .map(fvg => `  · ${fvg.type} ${fvg.bottom}–${fvg.top}`)
     .join("\n") || "  （無未填 FVG）";
 
   const liq = report.key_levels.liquidity;
-  const bslLevels = (liq?.bsl || []).map(l => l.level).join(", ") || "—";
-  const sslLevels = (liq?.ssl || []).map(l => l.level).join(", ") || "—";
+  const bslLevels = (liq?.bsl || []).map(l => l.level).filter(v => v != null).join(", ") || "—";
+  const sslLevels = (liq?.ssl || []).map(l => l.level).filter(v => v != null).join(", ") || "—";
 
   const h4Trend  = report.structure["4H"]?.trend  || "?";
   const h1Trend  = report.structure["1H"]?.trend  || "?";

@@ -238,6 +238,9 @@ router.post("/api/trading/analyze", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "必填：pair, direction" });
   }
   const validation = validateSetup(setup);
+  if (!validation.valid) {
+    return res.status(400).json({ error: validation.issues?.join("; ") || "setup 驗證失敗", validation });
+  }
 
   try {
     const analysis  = await analyzeSetup(setup);

@@ -354,7 +354,8 @@ function findLiquidityLevels(candles, p) {
 function clusterLevels(prices, tol) {
   const clusters = [];
   for (const p of prices) {
-    const existing = clusters.find(c => Math.abs(c - p) / p < tol);
+    if (!p) continue; // skip zero/null to avoid division-by-zero
+    const existing = clusters.find(c => c !== 0 && Math.abs(c - p) / p < tol);
     if (!existing) clusters.push(p);
   }
   return clusters;
@@ -489,8 +490,9 @@ function buildConfluence(results) {
   }
   const avgScore = totalWeight ? Math.round(weightedScore / totalWeight) : 0;
 
-  // Overall grade for best entry timeframe
-  const bestEntryTF = ["15M", "5M"].find(tf => scores[tf] >= 50) || null;
+  // Best entry TF: prefer lower TFs for precision, but accept any TF ≥ 50
+  const TF_PRIORITY = ["15M", "5M", "1H", "4H"];
+  const bestEntryTF = TF_PRIORITY.find(tf => (scores[tf] ?? 0) >= 50) || null;
 
   return {
     overall_bias:    overallBias,
