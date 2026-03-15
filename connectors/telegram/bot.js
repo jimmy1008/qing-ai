@@ -401,7 +401,7 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot) {
         userId:    String(msg.from?.id || ""),
         globalKey,
         replyText: replyText,
-        userText:  inputText,
+        userText:  cleanInput,
       });
     }
 
@@ -668,6 +668,7 @@ bot.on("message_reaction", (update) => {
 bot.on("polling_error", (err) => {
   writeLog("error", { message: err.message });
 });
+
 
 
 
