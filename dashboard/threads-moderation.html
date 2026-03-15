@@ -19,9 +19,14 @@
       </div>
     </div>
     <nav class="topbar-nav">
-      <button class="btn" type="button" onclick="location.href='/'">總覽</button>
+      <button class="btn" type="button" onclick="location.href='/'">← 總覽</button>
+      <div class="nav-sep"></div>
       <button class="btn active" type="button">Threads 審核</button>
       <button class="btn" type="button" onclick="location.href='/ai-cognition'">AI 認知</button>
+      <button class="btn" type="button" onclick="location.href='/lora-dashboard.html'">LoRA 訓練</button>
+      <button class="btn" type="button" onclick="location.href='/relationships'">關係記憶</button>
+      <button class="btn" type="button" onclick="location.href='/emotion-log'">情緒日誌</button>
+      <button class="btn" type="button" onclick="location.href='/trading'">交易日誌</button>
       <div class="nav-sep"></div>
       <button class="btn" type="button" onclick="loadQueue()">刷新</button>
       <select id="statusFilter" onchange="loadQueue()">

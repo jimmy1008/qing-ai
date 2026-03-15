@@ -1,6 +1,18 @@
 const path = require("path");
+const fs   = require("fs");
 const dotenv = require("dotenv");
 const WebSocket = require("ws");
+
+// ── Process-level error capture → memory/error_log.jsonl ─────────────────────
+const ERROR_LOG = path.join(__dirname, "memory/error_log.jsonl");
+function _appendError(type, message, stack) {
+  try {
+    const entry = { ts: Date.now(), type, message: String(message || ""), stack: String(stack || "").split("\n")[1] || "" };
+    fs.appendFileSync(ERROR_LOG, JSON.stringify(entry) + "\n", "utf-8");
+  } catch {}
+}
+process.on("uncaughtException",  err    => _appendError("uncaughtException",  err?.message, err?.stack));
+process.on("unhandledRejection", reason => _appendError("unhandledRejection", reason?.message || String(reason), reason?.stack));
 
 dotenv.config({ path: path.join(__dirname, ".env") });
 dotenv.config({ path: path.join(__dirname, ".env.local"), override: true });
@@ -46,6 +58,21 @@ const { startScheduler } = require("./ai/modules/trading/trading_scheduler");
 
 app.get("/trading", (_req, res) => res.sendFile(path.join(__dirname, "dashboard", "trading.html")));
 app.get("/chart",   (_req, res) => res.sendFile(path.join(__dirname, "dashboard", "chart.html")));
+
+// ── System error log ──────────────────────────────────────────────────────────
+app.get("/api/system/errors", (_req, res) => {
+  try {
+    if (!fs.existsSync(ERROR_LOG)) return res.json([]);
+    const lines = fs.readFileSync(ERROR_LOG, "utf-8").split("\n").filter(Boolean);
+    const errors = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    res.json(errors.slice(-100).reverse());
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post("/api/system/errors/clear", (_req, res) => {
+  try { if (fs.existsSync(ERROR_LOG)) fs.writeFileSync(ERROR_LOG, "", "utf-8"); res.json({ ok: true }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // ── Auto memory consolidation — runs daily at 04:00 Taiwan time ───────────────
 function scheduleMemoryConsolidation() {
