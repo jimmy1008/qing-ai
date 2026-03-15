@@ -115,12 +115,29 @@ function bufferMessage(chatId, inputText, msg, isDeveloper, isReplyToBot) {
 // Strip Telegram-quote prefixes injected by this bot before writing to memory.
 // The AI still receives the full text (with prefix) for context;
 // memory only stores the user's actual words.
-const QUOTE_PREFIX_RE = /^\[(?:引用訊息[^\]]*|你之前說：「[^」]*」)\]\n?/;
+const QUOTE_PREFIX_RE = /^\[(?:引用訊息[^\]]*|你之前說：「[^」]*」|使用者分享了[^\]]*)\]\n?/;
+
+// ── DM reply lock ──────────────────────────────────────────────────────────────
+// Prevents overlapping AI dispatches for the same private chat.
+// If a second message arrives while the first is still processing,
+// it's queued and flushed as a combined turn after the current dispatch finishes.
+const _dispatchingChats = new Set();
+const _pendingQueue     = new Map(); // chatId → [{ combinedInput, msg, isDeveloper, isReplyToBot }]
 
 async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot) {
   const chatId   = msg.chat?.id;
   const chatType = msg.chat?.type || "unknown";
   const channel  = chatType === "private" ? "private" : "group";
+
+  // DM lock: queue if already processing this chat
+  if (channel === "private" && _dispatchingChats.has(chatId)) {
+    const q = _pendingQueue.get(chatId) || [];
+    q.push({ combinedInput, msg, isDeveloper, isReplyToBot });
+    _pendingQueue.set(chatId, q);
+    writeLog("dm_queued", { chatId, queueLen: q.length });
+    return;
+  }
+  if (channel === "private") _dispatchingChats.add(chatId);
 
   // Clean version: strip quote prefix so memory stores only real user words
   const cleanInput = String(combinedInput || "").replace(QUOTE_PREFIX_RE, "").trim() || String(combinedInput || "");
@@ -410,6 +427,21 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot) {
     clearInterval(typingInterval);
     writeLog("send_error", { message: err.message, chatId, chatType, channel, userId: msg.from?.id || null });
     await bot.sendMessage(chatId, "AI error.", { reply_to_message_id: msg.message_id });
+  } finally {
+    // Release DM lock and flush any queued messages as a combined turn
+    if (channel === "private") {
+      _dispatchingChats.delete(chatId);
+      const queued = _pendingQueue.get(chatId);
+      if (queued && queued.length > 0) {
+        _pendingQueue.delete(chatId);
+        const combined  = queued.map(q => q.combinedInput).join("\n");
+        const lastEntry = queued[queued.length - 1];
+        const anyDev    = queued.some(q => q.isDeveloper);
+        const anyReply  = queued.some(q => q.isReplyToBot);
+        writeLog("dm_queue_flush", { chatId, count: queued.length });
+        dispatchToAI(combined, lastEntry.msg, anyDev, anyReply).catch(() => {});
+      }
+    }
   }
 }
 
@@ -485,8 +517,19 @@ bot.on("message", async (msg) => {
         // User is replying to the bot's own previous message — label it clearly
         inputText = `[你之前說：「${quotedText.slice(0, 100)}」]\n${inputText}`;
       } else {
-        const quotedFrom = quotedMsg.from?.username || quotedMsg.from?.first_name || "對方";
-        inputText = `[引用訊息 — ${quotedFrom} 說：「${quotedText.slice(0, 100)}」]\n${inputText}`;
+        // Detect if quoted message is a channel/forwarded post (no real user sender)
+        const isChannelPost = Boolean(
+          quotedMsg.sender_chat ||                        // native channel post
+          quotedMsg.forward_from_chat ||                  // forwarded from channel
+          (!quotedMsg.from && (quotedMsg.forward_date))   // anonymous forward
+        );
+        if (isChannelPost) {
+          const src = quotedMsg.forward_from_chat?.title || quotedMsg.sender_chat?.title || "外部頻道";
+          inputText = `[使用者分享了一則來自「${src}」的外部貼文給你看：「${quotedText.slice(0, 150)}」。這是別人發佈的內容，不是你說的，也不是對方說的]\n${inputText}`;
+        } else {
+          const quotedFrom = quotedMsg.from?.username || quotedMsg.from?.first_name || "對方";
+          inputText = `[引用訊息 — ${quotedFrom} 說：「${quotedText.slice(0, 100)}」]\n${inputText}`;
+        }
       }
     }
   }
