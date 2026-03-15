@@ -1,16 +1,16 @@
-ï»¿const fs = require('fs');
-const path = require('path');
-const { buildContext, createOllamaClient, generateAIReply } = require('./ai/pipeline');
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const { processEvent } = require("../ai/orchestrator");
 
 const prompts = [
-  'ä½ å¥½','ä»Šå¤©æœ‰é»žç´¯','å‰›å‰›åƒå®Œé£¯','æˆ‘æœ‰é»žæƒ³ç¡','ä»Šå¤©å¿ƒæƒ…é‚„è¡Œ','å‰›å‰›çœ‹åˆ°ä¸€å€‹å¾ˆå¥½ç¬‘çš„æ±è¥¿','æœ€è¿‘å¤©æ°£æ€ªæ€ªçš„','æˆ‘åœ¨æƒ³æ™šé»žè¦ä¸è¦å‡ºåŽ»èµ°èµ°','å‰›å‰›æœ‰é»žåˆ†å¿ƒ','å…¶å¯¦æˆ‘æœ‰é»žæ‡¶','ä½ æœƒä¸æœƒè¦ºå¾—ä»Šå¤©å¾ˆå®‰éœ','æˆ‘ç¾åœ¨æœ‰é»žç„¡èŠ','å‰›å‰›çªç„¶æƒ³åˆ°ä»¥å‰çš„äº‹æƒ…','æˆ‘æƒ³æ”¾ç©ºä¸€ä¸‹','ä½ å¹³å¸¸æœƒæ³¨æ„äººå¿ƒæƒ…å—Ž','æœ‰æ™‚å€™æˆ‘æœƒæƒ³å¤ªå¤š','ä»Šå¤©æ²’æœ‰ç™¼ç”Ÿä»€éº¼å¤§äº‹','åªæ˜¯æƒ³éš¨ä¾¿èŠèŠ','ä½ è¦ºå¾—äººç‚ºä»€éº¼æœƒçªç„¶ä½Žæ½®','æˆ‘è¦ºå¾—æ™šä¸Šæ¯”è¼ƒå®¹æ˜“æƒ³æ±æƒ³è¥¿'
+  "§A¦n", "¤µ¤Ñ¦³ÂI²Ö", "­è­è¦Y§¹¶º", "§Ú¦³ÂI·QºÎ", "¤µ¤Ñ¤ß±¡ÁÙ¦æ", "­è­è¬Ý¨ì¤@­Ó«Ü¦n¯ºªºªF¦è", "³Ìªñ¤Ñ®ð©Ç©Çªº", "§Ú¦b·Q±ßÂI­n¤£­n¥X¥h¨«¨«", "­è­è¦³ÂI¤À¤ß", "¨ä¹ê§Ú¦³ÂIÃi", "§A·|¤£·|Ä±±o¤µ¤Ñ«Ü¦wÀR", "§Ú²{¦b¦³ÂIµL²á", "­è­è¬ðµM·Q¨ì¥H«eªº¨Æ±¡", "§Ú·Q©ñªÅ¤@¤U", "§A¥­±`·|ª`·N¤H¤ß±¡¶Ü", "¦³®É­Ô§Ú·|·Q¤Ó¦h", "¤µ¤Ñ¨S¦³µo¥Í¤°»ò¤j¨Æ", "¥u¬O·QÀH«K²á²á", "§AÄ±±o¤H¬°¤°»ò·|¬ðµM§C¼é", "§ÚÄ±±o±ß¤W¤ñ¸û®e©ö·QªF·Q¦è",
 ];
 
 const projectRoot = process.cwd();
-const logPath = path.join(projectRoot, 'logs', 'connector.log');
-const statusPath = path.join(projectRoot, 'telemetry', 'natural_dialogue_100_status.json');
-const ollamaClient = createOllamaClient();
-let history = [];
+const logPath = path.join(projectRoot, "logs", "connector.log");
+const statusPath = path.join(projectRoot, "telemetry", "natural_dialogue_100_status.json");
 
 function writeLog(stage, data = {}) {
   const entry = { timestamp: new Date().toISOString(), stage, ...data };
@@ -22,67 +22,79 @@ function writeStatus(data) {
 }
 
 (async () => {
-  writeStatus({ state: 'running', completedRounds: 0, targetRounds: 100 });
+  writeStatus({ state: "running", completedRounds: 0, targetRounds: 100 });
+
   for (let i = 0; i < 100; i += 1) {
     const text = prompts[i % prompts.length];
     const event = {
-      type: 'message', content: text, text,
-      userId: 'sim_user_1001', fromId: 'sim_user_1001', username: 'sim_natural_user',
-      connector: 'telegram', isPrivate: true, channel: 'private',
-      mentionDetected: false, isDirectMention: false, isCommand: false,
-      meta: { isDeveloper: false }, chat: { id: 'sim_chat_1001', type: 'private' }
+      type: "message",
+      content: text,
+      text,
+      userId: "sim_user_1001",
+      fromId: "sim_user_1001",
+      username: "sim_natural_user",
+      connector: "telegram",
+      platform: "telegram",
+      isPrivate: true,
+      channel: "private",
+      mentionDetected: false,
+      isDirectMention: false,
+      isCommand: false,
+      chat: { id: "sim_chat_1001", type: "private" },
+      chatId: "sim_chat_1001",
+      meta: { isDeveloper: false },
     };
 
-    writeLog('incoming', { text, chatId: 'sim_chat_1001', chatType: 'private', channel: 'private', mentionDetected: false, isDirectMention: false, isCommand: false, isDeveloper: false, userId: 'sim_user_1001', username: 'sim_natural_user' });
-    writeLog('pipeline_dispatch', { text, chatId: 'sim_chat_1001', chatType: 'private', channel: 'private', isDirectMention: false, isDeveloper: false, userId: 'sim_user_1001', username: 'sim_natural_user' });
+    writeLog("incoming", {
+      text,
+      chatId: "sim_chat_1001",
+      chatType: "private",
+      channel: "private",
+      mentionDetected: false,
+      isDirectMention: false,
+      isCommand: false,
+      isDeveloper: false,
+      userId: "sim_user_1001",
+      username: "sim_natural_user",
+    });
 
-    const context = buildContext(text, history, { userId: 'sim_user_1001', username: 'sim_natural_user', role: 'user', event });
-    const result = await generateAIReply(text, context, ollamaClient);
+    writeLog("pipeline_dispatch", {
+      text,
+      chatId: "sim_chat_1001",
+      chatType: "private",
+      channel: "private",
+      isDirectMention: false,
+      isDeveloper: false,
+      userId: "sim_user_1001",
+      username: "sim_natural_user",
+    });
 
-    writeLog('reply', {
+    const result = await processEvent(event);
+
+    writeLog("reply", {
       text: result.reply,
       skipped: Boolean(result.skipped),
       halted: Boolean(result.halted),
-      reflexTriggered: result.telemetry?.reflexTriggered || false,
-      reflexPassed: result.telemetry?.reflexPassed || false,
-      retryCount: result.telemetry?.retryCount || 0,
-      artifactDetected: result.telemetry?.artifactDetected || false,
-      reflexPath: result.telemetry?.reflexPath || 'pass',
-      secondLineDriftDetected: result.telemetry?.secondLineDriftDetected || false,
-      intent: result.telemetry?.intent || 'none',
-      actionProposal: result.telemetry?.actionProposal || null,
-      riskDecision: result.telemetry?.riskDecision || null,
-      executionResult: result.telemetry?.executionResult || null,
-      topicAnchor: result.telemetry?.topicAnchor || null,
-      topicTurnsRemaining: result.telemetry?.topicTurnsRemaining || 0,
-      initiativeLevel: result.telemetry?.initiativeLevel || 0,
-      questionRatio: result.telemetry?.questionRatio || 0,
-      momentumAdjusted: result.telemetry?.momentumAdjusted || false,
-      consecutiveQuestionCount: result.telemetry?.consecutiveQuestionCount || 0,
-      baselineMood: result.telemetry?.baselineMood || 'calm',
-      judgeTriggered: result.telemetry?.judgeTriggered || false,
-      emotionLevel: Number(result.telemetry?.emotionLevel || 0),
-      stanceBias: Number(result.telemetry?.stanceBias || 0),
-      role: result.telemetry?.role || 'public_user',
-      channel: 'private',
-      connector: result.telemetry?.connector || 'telegram',
-      personaModeKey: result.telemetry?.personaModeKey || 'public_user_public',
-      authoritySpoofAttempt: result.telemetry?.authoritySpoofAttempt || false,
-      chatId: 'sim_chat_1001',
-      chatType: 'private'
+      intent: result.meta?.intent || "none",
+      routing_level: result.meta?.routing_level ?? null,
+      judge_pass: result.meta?.judge_pass ?? null,
+      judge_score: result.meta?.judge_score ?? null,
+      repair_action: result.meta?.repair_action || "none",
+      channel: "private",
+      connector: "telegram",
+      chatId: "sim_chat_1001",
+      chatType: "private",
     });
 
-    if (result.reply && !result.skipped && !result.halted) {
-      history.push({ role: 'user', content: text });
-      history.push({ role: 'assistant', content: result.reply });
-      if (history.length > 40) history = history.slice(-40);
-    }
-
-    writeStatus({ state: 'running', completedRounds: i + 1, targetRounds: 100 });
+    writeStatus({ state: "running", completedRounds: i + 1, targetRounds: 100 });
   }
-  writeStatus({ state: 'completed', completedRounds: 100, targetRounds: 100 });
+
+  writeStatus({ state: "completed", completedRounds: 100, targetRounds: 100 });
 })().catch((err) => {
-  writeStatus({ state: 'failed', error: err.message });
-  fs.appendFileSync(path.join(projectRoot, 'logs', 'events.log'), `${JSON.stringify({ timestamp: new Date().toISOString(), stage: 'natural_dialogue_batch_error', message: err.message })}\n`);
+  writeStatus({ state: "failed", error: err.message });
+  fs.appendFileSync(
+    path.join(projectRoot, "logs", "events.log"),
+    `${JSON.stringify({ timestamp: new Date().toISOString(), stage: "natural_dialogue_batch_error", message: err.message })}\n`,
+  );
   process.exit(1);
 });

@@ -13,12 +13,16 @@
 //   meta: { is_developer_present, connector, channel, isPrivate, session_key }
 // }
 
-const { makeSessionKey, getSession } = require("../memory/working_memory");
+const { makeSessionKey, getSession, getResumptionContext } = require("../memory/working_memory");
 const developerConfig = require("../../config/developer_config");
 
 function buildContextPacket(event) {
   const sessionKey = makeSessionKey(event);
-  const recentMessages = getSession(sessionKey).slice(-12); // last 6 turns
+  const liveSession = getSession(sessionKey);
+  // If session is fresh (no live turns), prepend resumption context from last stale session
+  // so the AI remembers the last 3 turns even after a long break (F-07 fix)
+  const resumption = liveSession.length === 0 ? getResumptionContext(sessionKey) : [];
+  const recentMessages = [...resumption, ...liveSession].slice(-12); // last 6 turns
 
   return {
     platform: event.platform || event.connector || "unknown",
@@ -34,6 +38,7 @@ function buildContextPacket(event) {
       isPrivate:   Boolean(event.isPrivate || event.channel === "private"),
       session_key: sessionKey,
       raw_event_type: event.type || null,
+      has_resumption_context: resumption.length > 0,
     },
   };
 }

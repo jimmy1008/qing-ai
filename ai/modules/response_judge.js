@@ -125,7 +125,15 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
     issues.push({ type: "empty_reply", severity: "high", message: "回覆為空" });
   }
 
-  // ── 5. Decide action & attempt auto-fix ───────────────────────────────────
+  // ── 6. Emotional mismatch guard ───────────────────────────────────────────
+  // If user is venting / sad but reply tone is playful, flag it.
+  const PLAYFUL_RE = /(哈哈|嘻嘻|笑死|好好笑|lol|XD|xd|哈|嘿嘿|開心|輕鬆|沒事的|無所謂|不用擔心|別想太多)/i;
+  const isEmotionalIntent = intentResult?.intent === "emotional";
+  if (isEmotionalIntent && PLAYFUL_RE.test(text)) {
+    issues.push({ type: "emotional_mismatch", severity: "medium", message: "用戶情緒低落，但回覆語氣過於輕浮" });
+  }
+
+  // ── 7. Decide action & attempt auto-fix ───────────────────────────────────
   const highCount   = issues.filter(i => i.severity === "high").length;
   const mediumCount = issues.filter(i => i.severity === "medium").length;
 

@@ -1,21 +1,16 @@
 "use strict";
 /**
- * discord_client.js  â€”  æ™´çš„ Discord selfbot connector
+ * discord_client.js  ?? ?´ç? Discord selfbot connector
  *
- * æ–‡å­—ï¼š
- *   DM (ä»»ä½•äºº) â†’ å…¨ AI pipeline â†’ å›è¦†
- *   Guild â†’ è¢« @mention æˆ– owner ç™¼è¨Šæ¯ â†’ å›è¦†
+ * ?‡å?ï¼? *   DM (ä»»ä?äº? ????AI pipeline ???è?
+ *   Guild ??è¢?@mention ??owner ?¼è??????è?
  *
- * èªéŸ³ï¼š
- *   DM é€šè©±    â€” callCreate äº‹ä»¶ â†’ è‡ªå‹•æ¥è½ â†’ TTS èªéŸ³å›è¦†
- *   Guild èªéŸ³ â€” owner é€²é »é“ â†’ è·Ÿé€² â†’ TTS èªéŸ³å›è¦†
- *   owner é›¢é–‹ â†’ æ™´é›¢é–‹
- *
- * è¨˜æ†¶ï¼š
- *   Discord owner ID â†’ é€£çµåˆ° Telegram globalKeyï¼Œå®Œå…¨å…±ç”¨è¨˜æ†¶
- */
+ * èªéŸ³ï¼? *   DM ?šè©±    ??callCreate äº‹ä»¶ ???ªå??¥è½ ??TTS èªéŸ³?è?
+ *   Guild èªéŸ³ ??owner ?²é »????è·Ÿé€???TTS èªéŸ³?è?
+ *   owner ?¢é? ???´é›¢?? *
+ * è¨˜æ†¶ï¼? *   Discord owner ID ???????Telegram globalKeyï¼Œå??¨å…±?¨è??? */
 
-// â”€â”€ ffmpeg path (for prism-media audio playback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ ffmpeg path (for prism-media audio playback) ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 const ffmpegPath = require("ffmpeg-static");
 process.env.FFMPEG_PATH = ffmpegPath;
 
@@ -31,8 +26,9 @@ const { getOrCreateGlobalUserKey, isKnownUser } = require("../../ai/global_ident
 const { logConnectorReady, appendEvent }    = require("../../ai/system_event_log");
 const { processReaction }                   = require("../../ai/feedback_receptor");
 const { maybeSamplePattern }               = require("../../ai/social_pattern_memory");
+const { startConnectorHeartbeat }         = require("../../ai/connector_heartbeat_client");
 
-// â”€â”€ Known guilds (persistent, for new-guild detection) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Known guilds (persistent, for new-guild detection) ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 const KNOWN_GUILDS_PATH = require("path").join(__dirname, "../../memory/known_guilds.json");
 function loadKnownGuilds() {
   try { if (fs.existsSync(KNOWN_GUILDS_PATH)) return JSON.parse(fs.readFileSync(KNOWN_GUILDS_PATH, "utf-8")); } catch {}
@@ -47,9 +43,9 @@ function checkAndMarkNewGuild(guildId, guildName) {
   return true;
 }
 
-// â”€â”€ In-memory guild message registry (for group context injection) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ In-memory guild message registry (for group context injection) ?€?€?€?€?€?€?€?€?€?€?€?€
 const MAX_GUILD_MSGS = 10;
-const guildMsgRegistry = new Map(); // channelId â†’ [{ text, username, ts }]
+const guildMsgRegistry = new Map(); // channelId ??[{ text, username, ts }]
 function registerGuildMessage(channelId, { text = "", username = null } = {}) {
   const arr = guildMsgRegistry.get(channelId) || [];
   arr.push({ text, username, ts: Date.now() });
@@ -63,12 +59,12 @@ const SELF_ID       = process.env.DISCORD_SELF_ID;
 const OWNER_TG_ID   = process.env.DEV_TELEGRAM_ID;
 
 const REPLY_COOLDOWN_MS = 2500;
-const lastReply = new Map(); // channelId â†’ timestamp
+const lastReply = new Map(); // channelId ??timestamp
 
-// â”€â”€ In-memory reaction tracker (Discord sent messages) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ In-memory reaction tracker (Discord sent messages) ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 const MAX_TRACKED_REPLIES = 500;
 const TRACKED_TTL_MS      = 7 * 24 * 60 * 60 * 1000; // 7 days
-const _trackedReplies     = new Map(); // messageId â†’ { userId, replyText, userText, ts }
+const _trackedReplies     = new Map(); // messageId ??{ userId, replyText, userText, ts }
 
 function _trackReply(messageId, context) {
   if (!messageId) return;
@@ -85,7 +81,7 @@ function _lookupReply(messageId) {
   return entry;
 }
 
-// â”€â”€ Link Discord owner â†’ Telegram global identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Link Discord owner ??Telegram global identity ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 function linkOwnerIdentity() {
   if (!OWNER_ID || !OWNER_TG_ID) return;
   const MAP_PATH = path.join(__dirname, "../../memory/platform_user_map.json");
@@ -101,14 +97,14 @@ function linkOwnerIdentity() {
       const unknownKey = `unknown:${OWNER_ID}`;
       if (store.platformUserMap[unknownKey]) store.platformUserMap[unknownKey] = globalKey;
       fs.writeFileSync(MAP_PATH, JSON.stringify(store, null, 2));
-      console.log(`[discord] linked ${dcKey} â†’ ${globalKey} (Telegram memory shared)`);
+      console.log(`[discord] linked ${dcKey} ??${globalKey} (Telegram memory shared)`);
     }
   } catch (e) {
     console.warn("[discord] identity link failed:", e.message);
   }
 }
 
-// â”€â”€ AI turn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ AI turn ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 async function handleTurn(userId, username, text, opts = {}) {
   const { isPrivate = true, channelId = "dm", extraMeta = {} } = opts;
   getOrCreateGlobalUserKey({ platform: "discord", userId, username });
@@ -126,13 +122,13 @@ async function handleTurn(userId, username, text, opts = {}) {
   return String(result?.reply || "").trim();
 }
 
-// â”€â”€ Play TTS via selfbot voice connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Play TTS via selfbot voice connection ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 async function speakVia(connection, text) {
   if (!connection || !text) return;
   try {
     const buf = await synthesize(text);
     if (!buf || buf.length === 0) return;
-    // Write to temp file â€” prism FFmpeg reads file path for best compatibility
+    // Write to temp file ??prism FFmpeg reads file path for best compatibility
     const tmp = path.join(os.tmpdir(), `qing_tts_${Date.now()}.mp3`);
     fs.writeFileSync(tmp, buf);
     const dispatcher = connection.player.playUnknown(tmp, { volume: 1 });
@@ -147,7 +143,7 @@ async function speakVia(connection, text) {
   }
 }
 
-// â”€â”€ Send text reply (2000-char chunks) â€” returns last sent message â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Send text reply (2000-char chunks) ??returns last sent message ?€?€?€?€?€?€?€?€?€?€?€
 async function sendReply(channel, text) {
   if (!text) return null;
   let lastMsg = null;
@@ -160,7 +156,7 @@ async function sendReply(channel, text) {
   return lastMsg;
 }
 
-// â”€â”€ Cooldown guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Cooldown guard ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 function canReply(channelId) {
   const last = lastReply.get(channelId) || 0;
   if (Date.now() - last < REPLY_COOLDOWN_MS) return false;
@@ -168,10 +164,10 @@ function canReply(channelId) {
   return true;
 }
 
-// â”€â”€ Main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Main ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 function startDiscordClient() {
   if (!DISCORD_TOKEN) {
-    console.warn("[discord] DISCORD_TOKEN not set â€” skipping");
+    console.warn("[discord] DISCORD_TOKEN not set ??skipping");
     return;
   }
 
@@ -184,17 +180,18 @@ function startDiscordClient() {
 
   client.on("ready", () => {
     console.log(`[discord] logged in as ${client.user.tag}`);
-    logConnectorReady("discord", `å¸³è™Ÿï¼š${client.user.tag}`);
+    logConnectorReady("discord", `å¸³è?ï¼?{client.user.tag}`);
+    startConnectorHeartbeat("discord", () => ({ selfTag: client.user.tag }));
   });
 
-  // â”€â”€ DM voice call incoming â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ?€?€ DM voice call incoming ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
   client.on("callCreate", async (call) => {
     const channel = call.channel;
     if (!channel) return;
-    console.log(`[discord] incoming call â€” answering in 1.5s`);
+    console.log(`[discord] incoming call ??answering in 1.5s`);
     await new Promise((r) => setTimeout(r, 1500));
 
-    // Retry up to 2 times â€” voice WebSocket handshake sometimes needs a second attempt
+    // Retry up to 2 times ??voice WebSocket handshake sometimes needs a second attempt
     let lastErr;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
@@ -216,7 +213,7 @@ function startDiscordClient() {
     if (lastErr) console.error("[discord] failed to answer call after retries:", lastErr.message);
   });
 
-  // â”€â”€ DM call ended (caller hung up) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ?€?€ DM call ended (caller hung up) ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
   client.on("callDelete", () => {
     if (activeConn) {
       try { activeConn.disconnect(); } catch {}
@@ -240,7 +237,7 @@ function startDiscordClient() {
     }
   });
 
-  // â”€â”€ Voice state: follow owner (guild) + detect DM call hang-up â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ?€?€ Voice state: follow owner (guild) + detect DM call hang-up ?€?€?€?€?€?€?€?€?€?€?€
   client.on("voiceStateUpdate", async (oldState, newState) => {
     const memberId = newState.member?.id || oldState.member?.id
                   || newState.id || oldState.id; // DM calls use user id directly
@@ -251,7 +248,7 @@ function startDiscordClient() {
     const ownerJoined  = newState.channelId && oldState.channelId !== newState.channelId;
 
     if (ownerLeft) {
-      // Owner left any voice channel (guild or DM call) â†’ disconnect
+      // Owner left any voice channel (guild or DM call) ??disconnect
       if (activeConn) {
         try { activeConn.disconnect(); } catch {}
         try { client.voice.connection?.disconnect(); } catch {}
@@ -276,7 +273,7 @@ function startDiscordClient() {
     }
   });
 
-  // â”€â”€ Text messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ?€?€ Text messages ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
   client.on("messageCreate", async (msg) => {
     if (msg.author.id === SELF_ID) return;
     if (msg.author.bot)            return;
@@ -293,12 +290,12 @@ function startDiscordClient() {
 
     const cleanText = text.replace(/<@!?\d+>/g, "").trim() || text;
 
-    // P1 â€” !notify command (owner only)
+    // P1 ??!notify command (owner only)
     if (isOwner && cleanText.startsWith("!notify ")) {
       const note = cleanText.slice(8).trim();
       if (note) {
         appendEvent("new_feature", note);
-        await msg.channel.send("âœ“ è¨˜ä¸‹ä¾†äº†").catch(() => {});
+        await msg.channel.send("??è¨˜ä?ä¾†ä?").catch(() => {});
       }
       return;
     }
@@ -309,7 +306,7 @@ function startDiscordClient() {
       maybeSamplePattern(`dc_${msg.channelId}`, guildMsgRegistry.get(msg.channelId) || []);
     }
 
-    // P0 â€” build extra meta
+    // P0 ??build extra meta
     const extraMeta = { groupId: !isDM ? `dc_${msg.channelId}` : null };
     const userRef = { platform: "discord", userId: msg.author.id, username: msg.author.username };
     if (!isOwner && !isKnownUser(userRef)) {
@@ -320,11 +317,11 @@ function startDiscordClient() {
       extraMeta.newGroup = true;
       extraMeta.newGroupTitle = msg.guild?.name || null;
     }
-    // P2 â€” inject recent guild messages (exclude the current one)
+    // P2 ??inject recent guild messages (exclude the current one)
     if (!isDM) {
       const recent = (guildMsgRegistry.get(msg.channelId) || []).slice(0, -1).slice(-6);
       if (recent.length > 0) {
-        extraMeta.groupRecentMessages = recent.map(m => `${m.username || "?"}ï¼š${m.text}`).join("\n");
+        extraMeta.groupRecentMessages = recent.map(m => `${m.username || "?"}ï¼?{m.text}`).join("\n");
       }
     }
 
@@ -351,7 +348,7 @@ function startDiscordClient() {
     }
   });
 
-  // â”€â”€ Reaction feedback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ?€?€ Reaction feedback ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
   // Fires when any user reacts to a message. Only cares about reactions on
   // tracked AI replies; ignores self-reactions.
   client.on("messageReactionAdd", (reaction, user) => {
@@ -383,3 +380,5 @@ function startDiscordClient() {
 }
 
 module.exports = { startDiscordClient };
+
+

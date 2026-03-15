@@ -9,6 +9,7 @@ const { getPersonalityBaseline } = require("./personality_baseline");
 const { runAutonomousSession } = require("../connectors/threads_browser/executor");
 const { runNotificationScan } = require("../connectors/threads_browser/notification_scanner");
 const config = require("../config/activity_config");
+const { recordHeartbeat } = require("./health/connector_health");
 const fs = require("fs");
 const path = require("path");
 
@@ -18,6 +19,7 @@ const baseline = getPersonalityBaseline();
 let lastManualScanTimestamp = 0;
 let schedulerTimer = null;
 let notifTimer = null;
+let heartbeatTimer = null;
 let scanInFlight = false;
 let lastSchedulerResult = null;
 
@@ -314,6 +316,12 @@ function scheduleNextNotifScan() {
 
 function startActivityLoop() {
   if (schedulerTimer) return schedulerTimer;
+  if (!heartbeatTimer) {
+    heartbeatTimer = setInterval(() => {
+      recordHeartbeat("threads", { source: "threads_activity_scheduler" });
+    }, 60000);
+    recordHeartbeat("threads", { source: "threads_activity_scheduler" });
+  }
   scheduleNextNotifScan();
   return scheduleNextTick();
 }

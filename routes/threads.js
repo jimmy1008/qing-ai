@@ -263,8 +263,7 @@ router.post("/api/threads-moderation/:id/regenerate", requireAuth, async (req, r
   if (!event || event.platform !== "threads") return res.status(400).json({ error: "source event unavailable for regeneration" });
   try {
     const nextRegenerateIndex = Number(event.regenerateIndex || 0) + 1;
-    const ollamaClient = require("../ai/pipeline").createOllamaClient ? require("../ai/pipeline").createOllamaClient() : null;
-    const regenerated = await generateThreadsPublicReplyFromLLM({ ...event, regenerateIndex: nextRegenerateIndex, previousReply: item.content || "" }, ollamaClient);
+    const regenerated = await generateThreadsPublicReplyFromLLM({ ...event, regenerateIndex: nextRegenerateIndex, previousReply: item.content || "" });
     const updated = regenerateQueueItem(item.id, {
       content: regenerated.replyText, toneProfile: regenerated.toneProfile, personaMode: regenerated.personaModeKey,
       sourceEvent: { ...event, regenerateIndex: nextRegenerateIndex, personaModeKey: regenerated.personaModeKey, toneStyle: regenerated.toneProfile },

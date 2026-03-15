@@ -6,7 +6,7 @@ const { getStats: getWMStats }          = require("../ai/memory/working_memory")
 const { getCurrentMood, getRecentMoodEvents } = require("../ai/mood_engine");
 const { consolidateEpisodes } = require("../ai/episodic_store");
 
-module.exports = function createChatRouter({ ollamaClient }) {
+module.exports = function createChatRouter(_opts = {}) {
   const router = express.Router();
 
   router.post("/api/chat", async (req, res) => {

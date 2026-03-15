@@ -3,7 +3,7 @@ const fs   = require("fs");
 const dotenv = require("dotenv");
 const WebSocket = require("ws");
 
-// â”€â”€ Process-level error capture â†’ memory/error_log.jsonl â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Process-level error capture ??memory/error_log.jsonl ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 const ERROR_LOG = path.join(__dirname, "memory/error_log.jsonl");
 function _appendError(type, message, stack) {
   try {
@@ -18,10 +18,11 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 dotenv.config({ path: path.join(__dirname, ".env.local"), override: true });
 
 const express = require("express");
-const { createOllamaClient, buildContext } = require("./ai/pipeline");
 const { processNextAction } = require("./ai/action_planner");
 const { startActivityLoop } = require("./ai/threads_activity_scheduler");
 const { getThreadsContext } = require("./connectors/threads_browser/browser_manager");
+const { checkSilentConnectors } = require("./ai/health/connector_health");
+const { startMemoryDrivenProactiveScheduler } = require("./ai/proactive/proactive_memory_scheduler");
 
 console.log("RUNNING FILE:", __filename);
 console.log("=== MODEL CONFIG ===");
@@ -33,11 +34,10 @@ console.log("====================");
 const app = express();
 const PORT = 4050;
 const startTime = Date.now();
-const ollamaClient = createOllamaClient();
 const connectorLogPath = path.join(__dirname, "logs/connector.log");
 const actionLogPath = path.join(__dirname, "logs/actions.log");
 
-// â”€â”€ Middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Middleware ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 app.use(express.json());
 app.use("/api", (_req, res, next) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -45,11 +45,14 @@ app.use("/api", (_req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, "dashboard")));
 
-// â”€â”€ Route modules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Route modules ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 app.use(require("./routes/pages"));
 app.use(require("./routes/system")({ startTime, connectorLogPath, actionLogPath }));
 app.use(require("./routes/relationships"));
-app.use(require("./routes/chat")({ ollamaClient }));
+app.use(require("./routes/chat")());
+app.use(require("./routes/internal_memory"));
+app.use(require("./routes/internal_connector"));
+app.use(require("./routes/health"));
 app.use(require("./routes/threads"));
 app.use(require("./routes/lora").router);
 app.use(require("./routes/review"));
@@ -59,7 +62,7 @@ const { startScheduler } = require("./ai/modules/trading/trading_scheduler");
 app.get("/trading", (_req, res) => res.sendFile(path.join(__dirname, "dashboard", "trading.html")));
 app.get("/chart",   (_req, res) => res.sendFile(path.join(__dirname, "dashboard", "chart.html")));
 
-// â”€â”€ System error log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ System error log ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 app.get("/api/system/errors", (_req, res) => {
   try {
     if (!fs.existsSync(ERROR_LOG)) return res.json([]);
@@ -74,7 +77,7 @@ app.post("/api/system/errors/clear", (_req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// â”€â”€ Auto memory consolidation â€” runs daily at 04:00 Taiwan time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Auto memory consolidation ??runs daily at 04:00 Taiwan time ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 function scheduleMemoryConsolidation() {
   const { consolidateEpisodes } = require("./ai/episodic_store");
   const fs   = require("fs");
@@ -116,11 +119,11 @@ function scheduleMemoryConsolidation() {
   console.log(`[memory] consolidation scheduled (next run in ${Math.round(msUntilNext4am()/3600000)}h)`);
 }
 
-// â”€â”€ Start HTTP server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Start HTTP server ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 const server = app.listen(PORT, () => {
   console.log(`SocialAI running at http://localhost:${PORT}`);
-  startScheduler(); // æ™´é–‹å§‹è‡ªä¸»çœ‹ç›¤æŽ’ç¨‹
-  scheduleMemoryConsolidation();
+  startScheduler();
+  startMemoryDrivenProactiveScheduler();
 
   // Pre-warm main model so first conversation request doesn't pay load cost
   const axios = require("axios");
@@ -132,16 +135,23 @@ const server = app.listen(PORT, () => {
 });
 
 
-// â”€â”€ Priority action scheduler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ?€?€ Priority action scheduler ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 setInterval(() => {
   processNextAction().catch(err => {
     console.error("[PRIORITY SCHEDULER] processNextAction failed:", err.message);
   });
 }, 5000);
 
-// â”€â”€ Threads activity loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+setInterval(() => {
+  const alerts = checkSilentConnectors();
+  if (alerts.length > 0) {
+    console.warn(`[CONNECTOR MONITOR] silent connectors: ${alerts.map(a => a.connector).join(", ")}`);
+  }
+}, 60000);
+
+// ?€?€ Threads activity loop ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
 if (process.env.THREADS_PAUSED === "1") {
-  console.log("[THREADS] THREADS_PAUSED=1 â€” Threads activity loop disabled. Telegram-only mode.");
+  console.log("[THREADS] THREADS_PAUSED=1 ??Threads activity loop disabled. Telegram-only mode.");
 } else {
   getThreadsContext().catch(err => {
     console.error("[THREADS EXECUTOR] preload failed:", err.message);
@@ -150,4 +160,6 @@ if (process.env.THREADS_PAUSED === "1") {
 }
 
 // Telegram and Discord are started as separate pm2 processes.
-// See ecosystem.config.js â€” do NOT require them here.
+// See ecosystem.config.js ??do NOT require them here.
+
+
