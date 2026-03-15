@@ -29,6 +29,7 @@ const { processEvent }                      = require("../../ai/orchestrator");
 const { synthesize }                        = require("../../ai/tts_engine");
 const { getOrCreateGlobalUserKey, isKnownUser } = require("../../ai/global_identity_map");
 const { logConnectorReady, appendEvent }    = require("../../ai/system_event_log");
+const { processReaction }                   = require("../../ai/feedback_receptor");
 
 // ── Known guilds (persistent, for new-guild detection) ───────────────────────
 const KNOWN_GUILDS_PATH = require("path").join(__dirname, "../../memory/known_guilds.json");
@@ -62,6 +63,26 @@ const OWNER_TG_ID   = process.env.DEV_TELEGRAM_ID;
 
 const REPLY_COOLDOWN_MS = 2500;
 const lastReply = new Map(); // channelId → timestamp
+
+// ── In-memory reaction tracker (Discord sent messages) ────────────────────────
+const MAX_TRACKED_REPLIES = 500;
+const TRACKED_TTL_MS      = 7 * 24 * 60 * 60 * 1000; // 7 days
+const _trackedReplies     = new Map(); // messageId → { userId, replyText, userText, ts }
+
+function _trackReply(messageId, context) {
+  if (!messageId) return;
+  _trackedReplies.set(String(messageId), { ...context, ts: Date.now() });
+  if (_trackedReplies.size > MAX_TRACKED_REPLIES) {
+    _trackedReplies.delete(_trackedReplies.keys().next().value);
+  }
+}
+
+function _lookupReply(messageId) {
+  const entry = _trackedReplies.get(String(messageId));
+  if (!entry) return null;
+  if (Date.now() - entry.ts > TRACKED_TTL_MS) { _trackedReplies.delete(String(messageId)); return null; }
+  return entry;
+}
 
 // ── Link Discord owner → Telegram global identity ────────────────────────────
 function linkOwnerIdentity() {
@@ -125,14 +146,17 @@ async function speakVia(connection, text) {
   }
 }
 
-// ── Send text reply (2000-char chunks) ──────────────────────────────────────
+// ── Send text reply (2000-char chunks) — returns last sent message ───────────
 async function sendReply(channel, text) {
-  if (!text) return;
+  if (!text) return null;
+  let lastMsg = null;
   for (let i = 0; i < text.length; i += 1900) {
-    await channel.send(text.slice(i, i + 1900)).catch((e) =>
-      console.error("[discord] send error:", e.message)
-    );
+    lastMsg = await channel.send(text.slice(i, i + 1900)).catch((e) => {
+      console.error("[discord] send error:", e.message);
+      return null;
+    });
   }
+  return lastMsg;
 }
 
 // ── Cooldown guard ───────────────────────────────────────────────────────────
@@ -301,13 +325,42 @@ function startDiscordClient() {
       );
       if (!reply) return;
 
-      await sendReply(msg.channel, reply);
+      const sentMsg = await sendReply(msg.channel, reply);
+
+      // Track for reaction feedback
+      if (sentMsg?.id) {
+        _trackReply(sentMsg.id, { userId: msg.author.id, replyText: reply, userText: cleanText });
+      }
 
       // Speak TTS if in active voice call/channel
       if (activeConn) speakVia(activeConn, reply).catch(() => {});
 
     } catch (e) {
       console.error("[discord] message handler error:", e.message);
+    }
+  });
+
+  // ── Reaction feedback ──────────────────────────────────────────────────────
+  // Fires when any user reacts to a message. Only cares about reactions on
+  // tracked AI replies; ignores self-reactions.
+  client.on("messageReactionAdd", (reaction, user) => {
+    try {
+      if (!user || user.id === SELF_ID) return;
+      const msgId = reaction?.message?.id || reaction?.messageId;
+      if (!msgId) return;
+      const entry = _lookupReply(msgId);
+      if (!entry) return;
+      const emoji = reaction?.emoji?.name || "";
+      if (!emoji) return;
+      processReaction({
+        platform:  "discord",
+        userId:    user.id,
+        replyText: entry.replyText,
+        userText:  entry.userText,
+        emoji,
+      });
+    } catch (e) {
+      console.warn("[discord] reaction handler error:", e.message);
     }
   });
 
