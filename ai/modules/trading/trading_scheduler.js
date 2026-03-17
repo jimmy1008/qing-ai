@@ -197,9 +197,11 @@ function checkWeeklyReset() {
     if (_weekStart === currentWeek) return; // 同一週，不重置
 
     if (_weekStart !== null && _weeklyObs > 0) {
-      // 記錄上週的統計
-      const hitCount = _history.filter(h => h.score >= SETUP_THRESHOLD).length;
-      const hitRate  = _weeklyObs > 0 ? Number((hitCount / Math.min(_weeklyObs, _history.length)).toFixed(3)) : 0;
+      // 記錄上週的統計（只統計本週區間內的觀察）
+      const weekStartMs = new Date(_weekStart + "T00:00:00+08:00").getTime();
+      const thisWeekObs = _history.filter(h => h.timestamp >= weekStartMs);
+      const hitCount    = thisWeekObs.filter(h => h.score >= SETUP_THRESHOLD).length;
+      const hitRate     = thisWeekObs.length > 0 ? Number((hitCount / thisWeekObs.length).toFixed(3)) : 0;
       const simStats = getSimulatedStats();
       const entry = {
         week_start:      _weekStart,
@@ -277,25 +279,84 @@ function tryOptimizeRhythm() {
  * - 若無結構水位，用固定 1% SL + 2:1 RR 計算 TP
  */
 function calcSimLevels(price, bias, keyLevels) {
-  const liq  = keyLevels?.liquidity || {};
-  const ssls = (liq.ssl || []).map(l => Number(l.level)).filter(l => l < price).sort((a,b)=>b-a);
-  const bsls = (liq.bsl || []).map(l => Number(l.level)).filter(l => l > price).sort((a,b)=>a-b);
+  const isLong     = bias.includes("long");
+  const obs        = keyLevels?.order_blocks || [];
+  const swingHighs = (keyLevels?.swing_highs || []).map(h => Number(h.price)).filter(Boolean);
+  const swingLows  = (keyLevels?.swing_lows  || []).map(l => Number(l.price)).filter(Boolean);
+  const liq        = keyLevels?.liquidity || {};
+  const bsls       = (liq.bsl || []).map(l => Number(l.level));
+  const ssls       = (liq.ssl || []).map(l => Number(l.level));
 
-  const isLong = bias.includes("long");
-  let stop, target;
+  // DTFX stop buffer: place stop 0.15% beyond the structural level to absorb wicks
+  const BUF = 0.0015;
+  // Max stop distance: if OB/swing is more than 3% away, fall back to 1% fixed stop
+  const MAX_STOP_PCT = 0.03;
+  // Min stop distance: stop must be at least 0.5% from entry to avoid noise-triggered exits
+  const MIN_STOP_PCT = 0.005;
+
+  let stop = null;
 
   if (isLong) {
-    stop   = ssls[0] ?? Number((price * 0.99).toFixed(2));
-    const riskPts = Math.abs(price - stop);
-    target = bsls[0] ?? Number((price + riskPts * 2.0).toFixed(2));
+    // ── Stop: OB bottom → swing low → 1% fallback ──────────────────────────
+    const obBottom = obs
+      .filter(ob => ob.type === "bullish_OB" && Number(ob.bottom) < price)
+      .map(ob => Number(ob.bottom))
+      .sort((a, b) => b - a)[0];           // highest bullish OB below price
+
+    const swingLow = swingLows
+      .filter(l => l < price)
+      .sort((a, b) => b - a)[0];           // nearest swing low below price
+
+    const candidate = obBottom ?? swingLow ?? null;
+    stop = candidate != null && (price - candidate) / price <= MAX_STOP_PCT
+      ? Number((candidate * (1 - BUF)).toFixed(2))
+      : Number((price * 0.99).toFixed(2));
   } else {
-    stop   = bsls[0] ?? Number((price * 1.01).toFixed(2));
-    const riskPts = Math.abs(stop - price);
-    target = ssls[0] ?? Number((price - riskPts * 2.0).toFixed(2));
+    // ── Stop: OB top → swing high → 1% fallback ────────────────────────────
+    const obTop = obs
+      .filter(ob => ob.type === "bearish_OB" && Number(ob.top) > price)
+      .map(ob => Number(ob.top))
+      .sort((a, b) => a - b)[0];           // lowest bearish OB above price
+
+    const swingHigh = swingHighs
+      .filter(h => h > price)
+      .sort((a, b) => a - b)[0];           // nearest swing high above price
+
+    const candidate = obTop ?? swingHigh ?? null;
+    stop = candidate != null && (candidate - price) / price <= MAX_STOP_PCT
+      ? Number((candidate * (1 + BUF)).toFixed(2))
+      : Number((price * 1.01).toFixed(2));
   }
 
-  stop   = Number(Number(stop).toFixed(2));
-  target = Number(Number(target).toFixed(2));
+  // Enforce minimum stop distance — structural stops closer than 0.5% are too noisy
+  const actualStopDist = Math.abs(price - stop) / price;
+  if (actualStopDist < MIN_STOP_PCT) {
+    stop = isLong
+      ? Number((price * (1 - MIN_STOP_PCT)).toFixed(2))
+      : Number((price * (1 + MIN_STOP_PCT)).toFixed(2));
+  }
+
+  const riskPts   = Math.abs(price - stop);
+  const minTarget = isLong ? price + riskPts * 2.0 : price - riskPts * 2.0;
+
+  let target = null;
+
+  if (isLong) {
+    // ── Target: nearest swing high ≥ 2:1 RR → BSL cluster → 2x risk ────────
+    const shTarget = swingHighs.filter(h => h >= minTarget).sort((a, b) => a - b)[0];
+    const bslTarget = bsls.filter(l => l >= minTarget).sort((a, b) => a - b)[0];
+    target = shTarget ?? bslTarget ?? null;
+  } else {
+    // ── Target: nearest swing low ≥ 2:1 RR → SSL cluster → 2x risk ─────────
+    const slTarget  = swingLows.filter(l => l <= minTarget).sort((a, b) => b - a)[0];
+    const sslTarget = ssls.filter(l => l <= minTarget).sort((a, b) => b - a)[0];
+    target = slTarget ?? sslTarget ?? null;
+  }
+
+  // Fallback: guaranteed 2:1 RR
+  target = Number((target ?? minTarget).toFixed(2));
+  stop   = Number(stop.toFixed(2));
+
   const risk   = Math.abs(price - stop);
   const reward = Math.abs(target - price);
   const rr     = risk > 0 ? reward / risk : 0;
@@ -304,48 +365,43 @@ function calcSimLevels(price, bias, keyLevels) {
 }
 
 /**
- * 判斷模擬倉位是否已觸及 SL 或 TP
- * 優先使用 high/low（K 棒內觸及）而非只用收盤價，避免目標價在 K 棒內被穿越後未觸發
+ * 判斷模擬倉位是否已觸及 SL 或 TP（純價格穿越判斷）
+ * 只要當前報價碰到或穿越 stop/target 即觸發，不依賴 K 棒高低。
  * @param {object} trade
- * @param {number} close  — 當前收盤/最後價
- * @param {number} [high] — 當根 K 棒最高
- * @param {number} [low]  — 當根 K 棒最低
+ * @param {number} price — 當前市場報價
  */
-function checkSimOutcome(trade, close, high, low) {
-  const hi = high ?? close;
-  const lo = low  ?? close;
+function checkSimOutcome(trade, price) {
   if (trade.direction === "long") {
-    if (lo  <= trade.stop)   return "loss"; // K 棒最低觸及止損
-    if (hi  >= trade.target) return "win";  // K 棒最高觸及目標
+    if (price <= trade.stop)   return "loss"; // 價格觸及或跌破止損
+    if (price >= trade.target) return "win";  // 價格觸及或突破目標
   } else {
-    if (hi  >= trade.stop)   return "loss"; // K 棒最高觸及止損
-    if (lo  <= trade.target) return "win";  // K 棒最低觸及目標
+    if (price >= trade.stop)   return "loss"; // 價格觸及或突破止損
+    if (price <= trade.target) return "win";  // 價格觸及或跌破目標
   }
   return null; // 尚未觸發
 }
 
 /**
  * 監控所有開放模擬倉位，並在觸及 SL/TP 時自動平倉
- * @param {string} asset   — "BTC" | "ETH"
- * @param {number} price   — 最新收盤價
- * @param {number} [high]  — 當根 K 棒最高（可選）
- * @param {number} [low]   — 當根 K 棒最低（可選）
+ * @param {string} asset  — "BTC" | "ETH"
+ * @param {number} price  — 當前市場報價
  * @returns {number} count of trades closed in this call
  */
-function monitorSimTrades(asset, price, high, low) {
+function monitorSimTrades(asset, price) {
   const pair = `${asset}USDT`;
   const open = getOpenSimulatedTrades().filter(t => t.pair === pair);
   let closedCount = 0;
   for (const trade of open) {
-    const outcome = checkSimOutcome(trade, price, high, low);
+    const outcome = checkSimOutcome(trade, price);
     if (!outcome) continue;
     const now = Date.now();
+    const exitPrice = outcome === "win" ? trade.target : trade.stop;
     const updated = updateTrade(trade.id, {
       status:      "closed",
       sim_status:  "auto_closed",
       closed_at:   now,
       exit_reason: outcome === "win" ? "tp_hit" : "sl_hit",
-      result:      { outcome, exit_price: price },
+      result:      { outcome, exit_price: exitPrice },
     });
     const rr = updated?.result?.rr_achieved ?? "?";
     console.log(`[scheduler] sim trade CLOSED: ${pair} ${trade.direction} → ${outcome} @ ${price} (RR ${rr})`);
@@ -377,15 +433,15 @@ async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score,
   const pair = `${asset}USDT`;
   const forceDaily = opts && opts.forceDaily === true;
 
-  // 每資產最多 1 筆開倉
+  // 每資產最多 1 筆開倉（forceDaily 不豁免，避免同幣種重複持倉）
   const openSims = getOpenSimulatedTrades();
-  if (!forceDaily && openSims.some(t => t.pair === pair)) {
+  if (openSims.some(t => t.pair === pair)) {
     console.log(`[scheduler] sim: ${pair} already has open position, skipping.`);
     return null;
   }
 
-  // 全局最多 MAX_POSITIONS 筆
-  if (!forceDaily && openSims.length >= MAX_POSITIONS) {
+  // 全局最多 MAX_POSITIONS 筆（forceDaily 不豁免）
+  if (openSims.length >= MAX_POSITIONS) {
     console.log(`[scheduler] sim: max positions (${MAX_POSITIONS}) reached, skipping ${pair}.`);
     return null;
   }
@@ -674,8 +730,8 @@ async function runObservationCycle() {
         }
       }
 
-      // ── Step 2: 監控開放模擬倉位（傳入 high/low 做 K 棒內觸及判斷）──────
-      cycleClosedCount += monitorSimTrades(asset, price, quick.high, quick.low);
+      // ── Step 2: 監控開放模擬倉位（純價格穿越判斷）────────────────────
+      cycleClosedCount += monitorSimTrades(asset, price);
 
       // ── Step 3: 記錄觀察歷史 ────────────────────────────────────────────
       const entry = {
@@ -748,8 +804,8 @@ async function runObservationCycle() {
     }
   }
 
-  // 每 30 次觀察更新學習疑問
-  if (_history.length > 0 && _history.length % 30 === 0) {
+  // 每 30 次觀察更新學習疑問（_history 上限 500，用 _totalObservations 避免停止觸發）
+  if (_totalObservations > 0 && _totalObservations % 30 === 0) {
     refreshCuriosity();
   }
 
@@ -887,7 +943,10 @@ async function runSLTPMonitor() {
       // price reverts before the candle closes.
       const snap = await fetchSnapshot(asset);
       if (snap && snap.price) {
-        monitorSimTrades(asset, snap.price, snap.high ?? snap.price, snap.low ?? snap.price);
+        // Use only current close price — fetchSnapshot high/low is 24H range, not current candle.
+        // Using 24H range causes instant stop-outs on tight stops.
+        // The observation cycle (every 5–30 min) uses real candle H/L for intra-candle detection.
+        monitorSimTrades(asset, snap.price);
       }
     } catch { /* silent */ }
   }
@@ -923,8 +982,8 @@ function getSchedulerStatus() {
   const tw = getTW();
   const hitCount  = _history.filter(h => h.score >= SETUP_THRESHOLD).length;
   const openSims  = getOpenSimulatedTrades().length;
-  // Correct slice: when _weeklyObs > _history.length, slice from 0 (not from negative index)
-  const weeklySlice = _history.slice(Math.max(0, _history.length - _weeklyObs));
+  const weekStartMs    = _weekStart ? new Date(_weekStart + "T00:00:00+08:00").getTime() : 0;
+  const weeklySlice    = _history.filter(h => h.timestamp >= weekStartMs);
   const weeklyHitCount = weeklySlice.filter(h => h.score >= SETUP_THRESHOLD).length;
   const dayOfWeek = tw.getDay(); // 0=Sun, 6=Sat
   const is_weekend = dayOfWeek === 0 || dayOfWeek === 6;
@@ -939,7 +998,7 @@ function getSchedulerStatus() {
     week_start:           _weekStart,
     setup_hits:           hitCount,
     setup_hits_weekly:    weeklyHitCount,
-    setup_hit_rate:       _weeklyObs > 0 ? Number((weeklyHitCount / _weeklyObs).toFixed(3)) : 0, // 本週有結構比率
+    setup_hit_rate:       weeklySlice.length > 0 ? Number((weeklyHitCount / weeklySlice.length).toFixed(3)) : 0, // 本週有結構比率
     active_setups:        _activeSetups.length,
     open_sim_trades:      openSims,
     taiwan_time:          tw.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),

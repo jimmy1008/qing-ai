@@ -421,6 +421,16 @@
             <option value="breakeven">保本 BE</option>
           </select>
         </label>
+        <label>出場原因
+          <select id="closeReason">
+            <option value="manual">手動出場</option>
+            <option value="tp_hit">目標價達到</option>
+            <option value="sl_hit">止損觸發</option>
+            <option value="invalidated">結構失效</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-row">
         <label>出場價格
           <input id="closeExit" type="number" step="any" placeholder="66500">
         </label>
@@ -674,8 +684,17 @@
       : `<span class="outcome-chip chip-open">OPEN</span>`;
     const dirChip    = `<span class="dir-chip chip-${t.direction}">${t.direction.toUpperCase()}</span>`;
     const simChip    = t.simulated ? `<span class="outcome-chip chip-simulated">模擬</span>` : '';
-    const rrText  = t.result?.rr_achieved != null
-      ? `實際 RR: ${t.result.rr_achieved}` : `計畫 RR: ${t.rr_planned}`;
+    let rrText;
+    if (t.status === 'open') {
+      rrText = `計畫 RR: ${t.rr_planned} &nbsp;|&nbsp; <span style="color:#60a5fa;">止損 ${t.stop}</span> &nbsp;→&nbsp; <span style="color:#4ade80;">目標 ${t.target}</span>`;
+    } else if (t.result?.rr_achieved != null) {
+      const rrCol = t.result.rr_achieved >= t.rr_planned ? '#4ade80' : t.result.rr_achieved > 0 ? '#fde68a' : '#f87171';
+      const exitReasonLabel = { tp_hit:'目標價出場', sl_hit:'止損出場', manual:'手動出場', invalidated:'失效' }[t.exit_reason] || t.exit_reason || '';
+      const exitInfo = t.result.exit_price != null ? `出場 ${t.result.exit_price}${exitReasonLabel ? `（${exitReasonLabel}）` : ''}` : exitReasonLabel;
+      rrText = `實際 RR: <span style="color:${rrCol};font-weight:700;">${t.result.rr_achieved}</span> &nbsp;/&nbsp; 計畫 ${t.rr_planned} &nbsp;|&nbsp; ${exitInfo}`;
+    } else {
+      rrText = `計畫 RR: ${t.rr_planned}`;
+    }
 
     const closeBtn = t.status === 'open'
       ? `<button class="btn" style="font-size:11px;padding:3px 10px;" onclick="openCloseModal('${t.id}')">結束</button>` : '';
@@ -767,12 +786,13 @@
   }
 
   async function submitClose() {
-    const id      = document.getElementById('closeId').value;
-    const outcome = document.getElementById('closeOutcome').value;
-    const exit    = parseFloat(document.getElementById('closeExit').value) || null;
+    const id         = document.getElementById('closeId').value;
+    const outcome    = document.getElementById('closeOutcome').value;
+    const exit_reason = document.getElementById('closeReason').value;
+    const exit       = parseFloat(document.getElementById('closeExit').value) || null;
     await apiFetch(`/api/trading/log/${id}`, {
       method:'PATCH', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ status:'closed', result:{ outcome, exit_price: exit } }),
+      body: JSON.stringify({ status:'closed', exit_reason, result:{ outcome, exit_price: exit } }),
     });
     closeModal();
     loadData();

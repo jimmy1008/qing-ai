@@ -87,6 +87,7 @@ function logTrade(data) {
     target:           Number(data.target) || 0,
     rr_planned:       computeRR(data),
     entry_score:      data.entry_score != null ? Number(data.entry_score) : null,
+    grade:            data.grade || null,
     entry_type:       data.entry_type || "confirmation_entry",
     key_area:         data.key_area   || "",
     structure:        data.structure  || "",
