@@ -6,6 +6,7 @@
   <title>看盤 & 交易日誌 — 晴 DTFX</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="auth.js"></script>
   <style>
     .trading-grid {
       display: grid;
@@ -265,6 +266,15 @@
           <div id="schedulerStatus" style="font-size:12px;color:#8b8fa8;line-height:1.8;"></div>
         </div>
 
+        <!-- News Calendar -->
+        <div class="panel">
+          <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;">
+            財經事件日曆
+            <button class="btn" type="button" onclick="loadNews()" style="font-size:11px;padding:2px 8px;">刷新</button>
+          </div>
+          <div id="newsStatus" style="font-size:12px;color:#8b8fa8;line-height:1.8;">載入中...</div>
+        </div>
+
         <!-- Stats (real only) -->
         <div class="panel">
           <div class="panel-title">真實策略表現</div>
@@ -423,23 +433,17 @@
   </div>
 
   <script>
-  // ── Auth token ────────────────────────────────────────────────────────────
-  function getToken() {
+  // ── Auth: getToken / authFetch / showToast provided by auth.js ────────────
+  (function ensureToken() {
     const urlToken = new URLSearchParams(location.search).get('token');
-    if (urlToken) { localStorage.setItem('teamToken', urlToken); return urlToken; }
-    let t = localStorage.getItem('teamToken');
-    if (!t) {
-      t = prompt('請輸入 Team Token：') || '';
+    if (urlToken) localStorage.setItem('teamToken', urlToken);
+    if (!getToken()) {
+      const t = prompt('請輸入 Team Token：') || '';
       if (t) localStorage.setItem('teamToken', t);
     }
-    return t;
-  }
-  const TEAM_TOKEN = getToken();
-
-  function apiFetch(url, opts = {}) {
-    const headers = Object.assign({ 'x-team-token': TEAM_TOKEN }, opts.headers || {});
-    return fetch(url, Object.assign({}, opts, { headers }));
-  }
+  })();
+  // apiFetch → alias to authFetch for backward compat within this page
+  const apiFetch = authFetch;
 
   // ── State ──────────────────────────────────────────────────────────────────
   let trades = [];
@@ -453,6 +457,8 @@
   setInterval(refreshSnapshots, 60000);
   loadSchedulerStatus();
   setInterval(loadSchedulerStatus, 60000);
+  loadNews();
+  setInterval(loadNews, 300000); // refresh news every 5 min
 
   // ── Market Observation ─────────────────────────────────────────────────────
 
@@ -543,6 +549,8 @@
       <div class="mw-tf-row">${tfChips}</div>
       <div class="mw-indicators">
         ${obs.indicators?.rsi != null ? `<span class="mw-ind-chip">RSI ${obs.indicators.rsi}</span>` : ''}
+        ${obs.indicators?.kdj ? `<span class="mw-ind-chip" title="KDJ(1H) — 參考用">KDJ K:${obs.indicators.kdj.k} J:${obs.indicators.kdj.j}</span>` : ''}
+        ${obs.indicators?.stoch_k != null ? `<span class="mw-ind-chip">Stoch K:${obs.indicators.stoch_k}</span>` : ''}
         ${obs.latest_bos ? `<span class="mw-ind-chip">${obs.latest_bos.type}</span>` : ''}
         ${obs.latest_choch ? `<span class="mw-ind-chip">${obs.latest_choch.type}</span>` : ''}
         ${obs.volume ? `<span class="mw-ind-chip">Vol ${fmtVol(obs.volume)}</span>` : ''}
@@ -593,10 +601,10 @@
   // ── Load data ─────────────────────────────────────────────────────────────
   async function loadData() {
     const [jReal, jSim, sRes, ssRes] = await Promise.all([
-      fetch('/api/trading/journal?n=50&simulated=0').then(r=>r.json()).catch(()=>({trades:[]})),
-      fetch('/api/trading/journal?n=50&simulated=1').then(r=>r.json()).catch(()=>({trades:[]})),
-      fetch('/api/trading/stats').then(r=>r.json()).catch(()=>({})),
-      fetch('/api/trading/stats/simulated').then(r=>r.json()).catch(()=>({})),
+      apiFetch('/api/trading/journal?n=50&simulated=0').then(r=>r.json()).catch(()=>({trades:[]})),
+      apiFetch('/api/trading/journal?n=50&simulated=1').then(r=>r.json()).catch(()=>({trades:[]})),
+      apiFetch('/api/trading/stats').then(r=>r.json()).catch(()=>({})),
+      apiFetch('/api/trading/stats/simulated').then(r=>r.json()).catch(()=>({})),
     ]);
     trades    = jReal.trades || [];
     simTrades = jSim.trades  || [];
@@ -636,7 +644,7 @@
   // ── Scheduler status ──────────────────────────────────────────────────────
   async function loadSchedulerStatus() {
     try {
-      const s = await fetch('/api/trading/scheduler').then(r=>r.json());
+      const s = await apiFetch('/api/trading/scheduler').then(r=>r.json());
       const dot = document.getElementById('schedulerDot');
       dot.style.background = s.active && s.in_window ? '#4ade80' : s.active ? '#fde68a' : '#6b6f85';
       dot.title = s.active ? (s.in_window ? '看盤中' : '非看盤時間') : '未啟動';
@@ -645,7 +653,7 @@
         `台灣時間：${s.taiwan_time}`,
         `狀態：${s.is_weekend ? '週末休息' : s.in_window ? '看盤中' : '非看盤時間'}${s.next_window_min > 0 ? `（${s.next_window_min} 分鐘後）` : ''}`,
         `模式：${s.mode === 'learned' ? '已優化' : '探索中'}  間隔：${s.current_interval_min} 分鐘`,
-        `本週觀察：${s.observations_weekly ?? s.observations_total} 次  有結構比率：${(s.setup_hit_rate * 100).toFixed(0)}%（分數≥60）  開倉：${s.open_sim_trades} 筆`,
+        `本週觀察：${s.observations_weekly ?? s.observations_total} 次  有結構比率：${((s.setup_hit_rate || 0) * 100).toFixed(0)}%（分數≥60）  開倉：${s.open_sim_trades} 筆`,
         `累計觀察：${s.observations_total} 次  本週起：${s.week_start || '-'}`,
       ];
       document.getElementById('schedulerStatus').innerHTML = lines.join('<br>');
@@ -704,10 +712,10 @@
     if (!confirm('清空所有模擬交易記錄？學習反思資料（reviews / hypotheses）會保留。')) return;
     const res = await apiFetch('/api/trading/simulated/all', { method: 'DELETE' }).then(r => r.json());
     if (res.ok) {
-      alert(`已清除 ${res.removed} 筆模擬交易。`);
+      showToast(`已清除 ${res.removed} 筆模擬交易`, 'success');
       loadData();
     } else {
-      alert('清除失敗：' + (res.error || '未知錯誤'));
+      showToast('清除失敗：' + (res.error || '未知錯誤'), 'error');
     }
   }
 
@@ -783,7 +791,7 @@
     document.getElementById('reviewPanel').style.display = 'block';
     document.getElementById('reviewTitle').textContent = '⏳ 生成回顧中...';
     document.getElementById('reviewText').textContent = '';
-    const res = await fetch('/api/trading/review').then(r=>r.json());
+    const res = await apiFetch('/api/trading/review').then(r=>r.json());
     document.getElementById('reviewTitle').textContent = `週期性回顧（${res.trades_reviewed || 0} 筆）`;
     document.getElementById('reviewText').textContent = res.review || res.error || '';
   }
@@ -792,7 +800,7 @@
     document.getElementById('reviewPanel').style.display = 'block';
     document.getElementById('reviewTitle').textContent = '⏳ 生成優化假設中...';
     document.getElementById('reviewText').textContent = '';
-    const res = await fetch('/api/trading/hypothesis').then(r=>r.json());
+    const res = await apiFetch('/api/trading/hypothesis').then(r=>r.json());
     document.getElementById('reviewTitle').textContent = '策略優化假設';
     document.getElementById('reviewText').textContent = res.hypothesis || res.error || '';
   }
@@ -828,6 +836,38 @@
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
     }).then(r=>r.json());
     el.textContent = res.analysis || res.error || '';
+  }
+
+  // ── News Calendar ─────────────────────────────────────────────────────────
+  async function loadNews() {
+    const el = document.getElementById('newsStatus');
+    if (!el) return;
+    el.textContent = '載入中...';
+    try {
+      const data = await apiFetch('/api/trading/news/upcoming').then(r => r.json());
+      const events = Array.isArray(data) ? data : (data.events || data.items || []);
+      if (!events.length) {
+        el.textContent = '目前無即將到來的財經事件。';
+        return;
+      }
+      const IMPACT_COLOR = { high: '#f87171', medium: '#fde68a', low: '#6b7280' };
+      el.innerHTML = events.slice(0, 10).map(ev => {
+        const time = ev.time || ev.date || ev.datetime || '';
+        const fmtTime = time ? new Date(time).toLocaleString('zh-TW', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '--';
+        const impact = (ev.impact || ev.importance || '').toLowerCase();
+        const color = IMPACT_COLOR[impact] || '#8b8fa8';
+        const currency = ev.currency || ev.symbol || '';
+        const title = ev.title || ev.name || ev.event || '未知事件';
+        return `<div style="display:flex;gap:8px;align-items:baseline;padding:3px 0;border-bottom:1px solid #1e2530;">
+          <span style="color:#6b7280;font-size:11px;white-space:nowrap;">${fmtTime}</span>
+          ${currency ? `<span style="color:#60a5fa;font-size:11px;font-weight:700;">${currency}</span>` : ''}
+          <span style="flex:1;color:#c9d1d9;font-size:12px;">${title}</span>
+          <span style="color:${color};font-size:11px;font-weight:700;">${impact.toUpperCase() || '?'}</span>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      el.textContent = '載入失敗：' + e.message;
+    }
   }
   </script>
 </body>

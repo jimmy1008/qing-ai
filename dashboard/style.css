@@ -519,5 +519,18 @@ select:hover {
   .compact-grid.two-col {
     grid-template-columns: 1fr;
   }
+
+  /* Collapse all fixed-left-column two-panel layouts to single column */
+  .trading-grid,
+  .el-grid,
+  .rel-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Wrap nav buttons on small screens */
+  .topbar-nav {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
 }
 

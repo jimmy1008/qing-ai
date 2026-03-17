@@ -14,8 +14,8 @@ const path = require("path");
 const fs   = require("fs");
 const { observe }                                                        = require("./market_observer");
 const { logTrade, updateTrade, getOpenSimulatedTrades, getClosedTrades,
-        getSimulatedStats, getStats }                                    = require("./trade_journal");
-const { periodicReview, generateHypothesis }                             = require("./trade_reflector");
+        getSimulatedStats, getStats, getRecentTrades }                   = require("./trade_journal");
+const { periodicReview, generateHypothesis, generateObservationInsight } = require("./trade_reflector");
 const { isNearHighImpactNews }                                           = require("./news_calendar");
 
 // ── 常數 ──────────────────────────────────────────────────────────────────────
@@ -29,12 +29,35 @@ const WINDOW_END   = 24;   // 24:00 (全天)
 const EXPLORE_INTERVALS   = [5, 10, 15, 30]; // 分鐘（最短 5 分鐘）
 const DEFAULT_INTERVAL    = 10;
 const MIN_OBS_TO_OPTIMIZE = 20; // 20 次觀察後即可優化頻率
-const SETUP_THRESHOLD     = 60;   // 分數門檻
+const SETUP_THRESHOLD     = 60;   // 標準開倉：score ≥ 60
+const HIGH_RR_THRESHOLD   = 2.5;  // 備用開倉：RR ≥ 2.5 時可放寬分數要求
+const HIGH_RR_MIN_SCORE   = 45;   // 備用開倉的最低分數下限（防止垃圾 setup 被 RR 救活）
 const MIN_RR              = 1.5;  // 最低 R:R 才建倉
 const MAX_POSITIONS       = 2;    // 最多同時持有倉位（含所有幣種）
 const SIM_ACCOUNT_SIZE    = 10000; // 模擬帳戶規模（USD）
 const MAX_RISK_PCT        = 0.01;  // 每筆最大風險 1%
 const NEWS_WINDOW_MIN     = 30;   // 重大消息前後 30 分鐘不建倉
+const DAILY_MIN_TRADES    = 1;    // Weekday floor: at least 1 new trade per TW day
+
+// ── 評級輔助 ──────────────────────────────────────────────────────────────────
+// observer 未回傳 grade 時的保底計算；顯示標籤統一由此輸出
+const GRADE_THRESHOLDS = [
+  { min: 80, grade: "A",  label: "A 級 ✦ 強勢信號" },
+  { min: 65, grade: "B",  label: "B 級 ✧ 合格信號" },
+  { min: 50, grade: "C",  label: "C 級 △ 偏弱信號" },
+  { min:  0, grade: "D",  label: "D 級 ✕ 不合格"   },
+];
+
+function computeGrade(score) {
+  for (const { min, grade } of GRADE_THRESHOLDS) {
+    if (score >= min) return grade;
+  }
+  return "D";
+}
+
+function gradeLabel(grade) {
+  return GRADE_THRESHOLDS.find(g => g.grade === grade)?.label || `${grade} 級`;
+}
 
 const RHYTHM_FILE      = path.join(__dirname, "../../../memory/trades/rhythm.json");
 const SETUPS_FILE      = path.join(__dirname, "../../../memory/trades/active_setups.json");
@@ -43,6 +66,7 @@ const STATS_FILE       = path.join(__dirname, "../../../memory/trades/stats.json
 const HYPOTHESES_FILE  = path.join(__dirname, "../../../memory/trades/hypotheses.jsonl");
 const WEEKLY_LOG_FILE  = path.join(__dirname, "../../../memory/trades/weekly_obs_log.jsonl");
 const VIEWS_FILE       = path.join(__dirname, "../../../memory/trades/sim_views.jsonl");
+const OBS_INSIGHT_FILE = path.join(__dirname, "../../../memory/trades/obs_insights.jsonl");
 
 // ── 狀態 ──────────────────────────────────────────────────────────────────────
 
@@ -129,6 +153,23 @@ function saveActiveSetups() {
 
 function getTW() {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+}
+
+function getTWDateKey(ms = Date.now()) {
+  const d = new Date(new Date(ms).toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  return d.toISOString().slice(0, 10);
+}
+
+function isWeekdayTW(ms = Date.now()) {
+  const d = new Date(new Date(ms).toLocaleString("en-US", { timeZone: "Asia/Taipei" }));
+  const day = d.getDay();
+  return day >= 1 && day <= 5;
+}
+
+function getTodayTradeCountTW() {
+  const todayKey = getTWDateKey(Date.now());
+  const recent = getRecentTrades(500);
+  return recent.filter((t) => t && t.created_at && getTWDateKey(t.created_at) === todayKey).length;
 }
 
 function isObservationWindow() {
@@ -332,18 +373,19 @@ function monitorSimTrades(asset, price, high, low) {
  * 風控：每資產 1 筆、全局最多 MAX_POSITIONS、RR ≥ MIN_RR、1% 最大風險
  * 新聞：重大消息前後 NEWS_WINDOW_MIN 分鐘內不建倉
  */
-async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score, grade, bestTf, tradeIdea) {
+async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score, grade, bestTf, tradeIdea, opts = {}) {
   const pair = `${asset}USDT`;
+  const forceDaily = opts && opts.forceDaily === true;
 
   // 每資產最多 1 筆開倉
   const openSims = getOpenSimulatedTrades();
-  if (openSims.some(t => t.pair === pair)) {
+  if (!forceDaily && openSims.some(t => t.pair === pair)) {
     console.log(`[scheduler] sim: ${pair} already has open position, skipping.`);
     return null;
   }
 
   // 全局最多 MAX_POSITIONS 筆
-  if (openSims.length >= MAX_POSITIONS) {
+  if (!forceDaily && openSims.length >= MAX_POSITIONS) {
     console.log(`[scheduler] sim: max positions (${MAX_POSITIONS}) reached, skipping ${pair}.`);
     return null;
   }
@@ -352,7 +394,7 @@ async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score,
   if (!bias || bias === "neutral") return null;
 
   // 動態風控：連續虧損 ≥ 4 → 暫停建倉
-  if (_consecutiveLosses >= 4) {
+  if (!forceDaily && _consecutiveLosses >= 4) {
     console.log(`[scheduler] sim: trading paused (${_consecutiveLosses} consecutive losses), skipping ${pair}.`);
     return null;
   }
@@ -360,7 +402,7 @@ async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score,
   // 重大消息前後不建倉
   try {
     const { near, events } = await isNearHighImpactNews(NEWS_WINDOW_MIN);
-    if (near) {
+    if (!forceDaily && near) {
       const titles = events.map(e => e.title).join(", ");
       console.log(`[scheduler] sim: near high-impact news (${titles}), skipping ${pair}.`);
       return null;
@@ -368,8 +410,9 @@ async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score,
   } catch { /* 行事曆抓取失敗不阻止建倉 */ }
 
   const levels = calcSimLevels(price, bias, keyLevels);
-  if (levels.rr < MIN_RR) {
-    console.log(`[scheduler] sim: ${pair} RR ${levels.rr.toFixed(2)} < ${MIN_RR}, skipping.`);
+  const minRR = forceDaily ? 0 : MIN_RR;
+  if (levels.rr < minRR) {
+    console.log(`[scheduler] sim: ${pair} RR ${levels.rr.toFixed(2)} < ${minRR}, skipping.`);
     return null;
   }
 
@@ -390,6 +433,15 @@ async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score,
   const h1 = structure?.["1H"] || {};
   const structDesc = h1.trend ? `${h1.trend} | ${(h1.pattern || []).join("/")}` : "multi-TF confluence";
 
+  const effectiveGrade = grade || computeGrade(score);
+  const gradeLabelStr  = gradeLabel(effectiveGrade);
+  const openMode       = forceDaily ? "AutoDaily" : (score >= SETUP_THRESHOLD ? "AutoScore" : "AutoHighRR");
+  const tradeReason    = [
+    `【${gradeLabelStr}】`,
+    `${openMode} | score=${score} | RR=${levels.rr.toFixed(2)} | bias=${bias}`,
+    tradeIdea ? tradeIdea.slice(0, 120) : "",
+  ].filter(Boolean).join(" — ");
+
   const trade = logTrade({
     pair,
     direction:   levels.direction,
@@ -402,7 +454,8 @@ async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score,
     structure:   structDesc,
     session:     undefined, // auto-detect by trade_journal
     entry_score: score,
-    reason:      `Auto: score=${score} grade=${grade} bias=${bias}. ${tradeIdea ? tradeIdea.slice(0, 120) + "…" : ""}`,
+    grade:       effectiveGrade,
+    reason:      tradeReason,
     auxiliary: {
       sim_account_size:  SIM_ACCOUNT_SIZE,
       position_size_usd: Number(positionSizeUSD.toFixed(2)),
@@ -414,8 +467,35 @@ async function autoOpenSimTrade(asset, price, bias, keyLevels, structure, score,
     sim_status: "watching",
   });
 
-  console.log(`[scheduler] sim trade OPENED: ${pair} ${levels.direction} entry=${levels.entry} stop=${levels.stop} target=${levels.target} RR=${levels.rr.toFixed(2)} size=$${positionSizeUSD.toFixed(0)}`);
+  console.log(`[scheduler] sim trade OPENED [${gradeLabelStr}]: ${pair} ${levels.direction} entry=${levels.entry} stop=${levels.stop} target=${levels.target} RR=${levels.rr.toFixed(2)} score=${score} size=$${positionSizeUSD.toFixed(0)}`);
   return trade;
+}
+
+async function ensureWeekdayDailyMinimumTrade(bestCandidate) {
+  if (!isWeekdayTW()) return null;
+  if (getTodayTradeCountTW() >= DAILY_MIN_TRADES) return null;
+  if (!bestCandidate || !bestCandidate.bias || bestCandidate.bias === "neutral") {
+    console.log("[scheduler] daily minimum: no valid candidate to force today.");
+    return null;
+  }
+
+  const opened = await autoOpenSimTrade(
+    bestCandidate.asset,
+    bestCandidate.price,
+    bestCandidate.bias,
+    bestCandidate.keyLevels,
+    bestCandidate.structure,
+    bestCandidate.score,
+    bestCandidate.grade,
+    bestCandidate.bestTf,
+    null,
+    { forceDaily: true }
+  );
+
+  if (opened) {
+    console.log(`[scheduler] daily minimum satisfied: forced 1 trade for ${getTWDateKey()}.`);
+  }
+  return opened;
 }
 
 // ── 模擬看法記錄（不開倉，只記觀點）────────────────────────────────────────
@@ -510,6 +590,24 @@ async function triggerPeriodicReview() {
 }
 
 /**
+ * 每 10 次觀察觸發一次學習洞察（背景非阻塞）
+ * 將近期觀察歷史（含 RSI/KDJ）送入 LLM，尋找指標模式與 DTFX 評分的關聯。
+ */
+async function triggerObservationInsight() {
+  if (_history.length < 5) return;
+  console.log(`[scheduler] triggering observation insight (${_history.length} obs total)`);
+  try {
+    const insight = await generateObservationInsight(_history.slice(-30));
+    const iEntry  = JSON.stringify({ timestamp: Date.now(), obs_count: _totalObservations, insight }) + "\n";
+    fs.mkdirSync(path.dirname(OBS_INSIGHT_FILE), { recursive: true });
+    fs.appendFileSync(OBS_INSIGHT_FILE, iEntry, "utf8");
+    console.log("[scheduler] observation insight saved →", OBS_INSIGHT_FILE);
+  } catch (err) {
+    console.error("[scheduler] observation insight error:", err.message);
+  }
+}
+
+/**
  * 將模擬交易統計寫入 stats.json（每次觀察週期更新）
  */
 function saveStats() {
@@ -539,6 +637,7 @@ async function runObservationCycle() {
   console.log(`[scheduler] observing (TW ${tw.toLocaleTimeString()}, mode=${_mode}, interval=${intervalMin}min)`);
 
   let cycleClosedCount = 0;
+  let bestCandidate = null;
 
   for (const asset of ASSETS) {
     try {
@@ -546,50 +645,96 @@ async function runObservationCycle() {
       const quick = await observe(asset, { noLLM: true });
       const price  = quick.price;
       const score  = quick.confluence?.avg_setup_score || 0;
-      const grade  = quick.setup?.grade   || "D";
+      const grade  = quick.setup?.grade || computeGrade(score); // observer grade 優先，否則本地計算
       const bias   = quick.confluence?.overall_bias || "neutral";
       const bestTf = quick.confluence?.best_entry_tf || null;
+
+      // ── 預先計算 RR（用於雙條件判斷）────────────────────────────────────
+      const estLevels      = bias !== "neutral" ? calcSimLevels(price, bias, quick.key_levels) : null;
+      const estimatedRR    = estLevels?.rr || 0;
+
+      // 開倉條件：score ≥ 60（標準）OR（RR ≥ 2.5 AND score ≥ 45，高盈虧比備用）
+      const meetsScore     = score >= SETUP_THRESHOLD;
+      const meetsHighRR    = estimatedRR >= HIGH_RR_THRESHOLD && score >= HIGH_RR_MIN_SCORE;
+      const shouldOpenSim  = bias !== "neutral" && (meetsScore || meetsHighRR);
+
+      // 用於每日最低倉位挑選最佳候選
+      if (bias !== "neutral") {
+        if (!bestCandidate || score > bestCandidate.score) {
+          bestCandidate = {
+            asset,
+            price: quick.price,
+            bias,
+            keyLevels: quick.key_levels,
+            structure: quick.structure,
+            score,
+            grade,
+            bestTf,
+          };
+        }
+      }
 
       // ── Step 2: 監控開放模擬倉位（傳入 high/low 做 K 棒內觸及判斷）──────
       cycleClosedCount += monitorSimTrades(asset, price, quick.high, quick.low);
 
       // ── Step 3: 記錄觀察歷史 ────────────────────────────────────────────
-      const entry = { asset, timestamp: Date.now(), score, grade, bias, best_entry_tf: bestTf, interval_min: intervalMin, price };
+      const entry = {
+        asset, timestamp: Date.now(), score, grade, bias,
+        rr: Number(estimatedRR.toFixed(2)),
+        best_entry_tf: bestTf, interval_min: intervalMin, price,
+        rsi: quick.indicators?.rsi ?? null,
+        kdj: quick.indicators?.kdj || null,
+      };
       _history.push(entry);
       if (_history.length > 500) _history.splice(0, _history.length - 500);
       _totalObservations++;
       _weeklyObs++;
 
-      if (score >= SETUP_THRESHOLD && bias !== "neutral") {
-        // ── Step 4a: 有 setup → 存 setup 快取 + 記錄模擬看法（不開倉）──
-        console.log(`[scheduler] setup: ${asset} score=${score} grade=${grade} bias=${bias} — logging view (no position).`);
+      if (shouldOpenSim) {
+        // ── Step 4a: 符合開倉條件 → 快取、記錄看法、嘗試建倉 ────────────
+        const openReason = meetsScore
+          ? `score=${score} ≥ 60`
+          : `RR=${estimatedRR.toFixed(2)} ≥ ${HIGH_RR_THRESHOLD}（score=${score}）`;
+        console.log(`[scheduler] setup [${gradeLabel(grade)}]: ${asset} ${openReason} bias=${bias} — attempting sim open.`);
+
         try {
           _activeSetups.unshift({
             asset, score, grade, bias, best_entry_tf: bestTf,
             price: quick.price, change_pct: quick.change_pct,
             structure: quick.structure, key_levels: quick.key_levels,
             confluence: quick.confluence, trade_idea: null,
+            estimated_rr: Number(estimatedRR.toFixed(2)),
             observed_at: Date.now(),
           });
           if (_activeSetups.length > 10) _activeSetups.splice(10);
           saveActiveSetups();
 
-          // ── Step 4b: 記錄模擬看法（不建立 trade journal 條目）──────────
-          logSimView(
+          // ── Step 4b: 記錄模擬看法快照 ──────────────────────────────────
+          logSimView(asset, quick.price, bias, quick.key_levels, quick.structure, score, grade, bestTf);
+
+          // ── Step 4c: 嘗試自動開倉 ─────────────────────────────────────
+          await autoOpenSimTrade(
             asset, quick.price, bias,
             quick.key_levels, quick.structure,
-            score, grade, bestTf
+            score, grade, bestTf,
+            `${gradeLabel(grade)} | ${openReason} | bias=${bias}`,
           );
         } catch (err) {
-          console.error(`[scheduler] sim view error for ${asset}:`, err.message);
+          console.error(`[scheduler] sim open error for ${asset}:`, err.message);
         }
       } else {
-        // ── Step 4c: 無 setup — 靜默觀察 ──────────────────────────────
-        console.log(`[scheduler] no setup: ${asset} score=${score} grade=${grade} bias=${bias} — watching.`);
+        // ── Step 4d: 不符合條件 — 靜默觀察 ────────────────────────────
+        console.log(`[scheduler] watching: ${asset} score=${score} grade=${grade} RR≈${estimatedRR.toFixed(2)} bias=${bias}`);
       }
     } catch (err) {
       console.error(`[scheduler] ${asset} error:`, err.message);
     }
+  }
+
+  try {
+    await ensureWeekdayDailyMinimumTrade(bestCandidate);
+  } catch (err) {
+    console.error("[scheduler] daily minimum enforcement failed:", err.message);
   }
 
   // ── 反思觸發：每 5 筆平倉觸發一次（背景非阻塞）─────────────────────────
@@ -606,6 +751,13 @@ async function runObservationCycle() {
   // 每 30 次觀察更新學習疑問
   if (_history.length > 0 && _history.length % 30 === 0) {
     refreshCuriosity();
+  }
+
+  // 每 10 次觀察觸發指標學習洞察（背景非阻塞）
+  if (_totalObservations > 0 && _totalObservations % 10 === 0) {
+    triggerObservationInsight().catch(err =>
+      console.error("[scheduler] observation insight failed:", err.message)
+    );
   }
 
   // 每次觀察週期非同步更新即將到來的事件提示（背景執行）

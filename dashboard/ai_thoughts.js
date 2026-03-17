@@ -41,14 +41,7 @@ async function ensureAuth() {
   if (data.role !== "superadmin") throw new Error("forbidden");
 }
 
-async function authFetch(url, options = {}) {
-  const token = localStorage.getItem("teamToken") || "";
-  const headers = {
-    ...(options.headers || {}),
-    "x-team-token": token,
-  };
-  return fetch(url, { ...options, headers });
-}
+// authFetch provided by auth.js (loaded before this script)
 
 function escapeHtml(text) {
   return String(text)

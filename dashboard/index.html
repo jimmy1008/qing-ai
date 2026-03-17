@@ -30,9 +30,9 @@
       <div class="nav-sep"></div>
       <button class="btn" type="button" onclick="manualRefresh()">刷新</button>
       <select id="refreshRate" aria-label="更新頻率">
-        <option value="3000" selected>3 秒</option>
         <option value="5000">5 秒</option>
-        <option value="10000">10 秒</option>
+        <option value="10000" selected>10 秒</option>
+        <option value="30000">30 秒</option>
       </select>
     </nav>
   </header>
@@ -43,12 +43,12 @@
         <section class="panel compact-panel">
           <div class="panel-title">系統核心狀態</div>
           <div class="summary-line">
-            <span id="connectorStatus" class="summary-chip success">● 在線</span>
-            <span id="incomingRate" class="summary-chip">0 次/分</span>
-            <span id="errorRate" class="summary-chip">錯誤：0</span>
-            <span id="healthScore" class="summary-chip">健康：100</span>
+            <span id="connectorStatus" class="summary-chip">● 載入中</span>
+            <span id="incomingRate" class="summary-chip">--</span>
+            <span id="errorRate" class="summary-chip">--</span>
+            <span id="healthScore" class="summary-chip">--</span>
           </div>
-          <div id="alertsBox" class="alert-box compact">目前沒有警示。</div>
+          <div id="alertsBox" class="alert-box compact">載入中…</div>
         </section>
 
         <section class="panel compact-panel">
@@ -237,6 +237,7 @@
 
   </main>
 
+  <script src="auth.js"></script>
   <script src="app.js"></script>
   <script>
     // ── Error log panel ───────────────────────────────────────────────────────
@@ -247,7 +248,7 @@
 
     async function fetchErrors() {
       try {
-        const data = await fetch('/api/system/errors').then(r => r.json());
+        const data = await authFetch('/api/system/errors').then(r => r.json());
         if (!Array.isArray(data) || data.length === 0) {
           errList.innerHTML = '<div style="color:#6b7280;font-size:12px;padding:6px 0;">目前無錯誤紀錄</div>';
           errBadge.style.display = 'none';
@@ -267,14 +268,16 @@
             <span style="color:#c9d4e0;word-break:break-all;">${e.message}</span>
           </div>`;
         }).join('');
-      } catch {}
+      } catch {
+        errList.innerHTML = '<div style="color:#f87171;font-size:12px;padding:6px 0;">錯誤紀錄載入失敗</div>';
+      }
     }
 
     fetchErrors();
     setInterval(fetchErrors, 15000);
 
     function clearErrorLog() {
-      fetch('/api/system/errors/clear', { method: 'POST' }).then(() => {
+      authFetch('/api/system/errors/clear', { method: 'POST' }).then(() => {
         errList.innerHTML = '<div style="color:#6b7280;font-size:12px;padding:6px 0;">目前無錯誤紀錄</div>';
         errBadge.style.display = 'none';
         errPanel.style.borderColor = '';

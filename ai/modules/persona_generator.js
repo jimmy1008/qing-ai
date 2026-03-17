@@ -19,6 +19,7 @@ const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE, STYLE_CONTRACT } = require(".
 const { applyBudget, trimRecentTurns, USER_PROMPT_CHAR_BUDGET } = require("./context_budget");
 const { getUnreadEvents, markAllRead } = require("../system_event_log");
 const { getSocialPatternHint }         = require("../social_pattern_memory");
+const { buildRuntimeBlock }            = require("../self_model");
 
 async function generatePersonaReply(contextPacket, intentResult, referenceResult, selectedMemories = []) {
   const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
@@ -89,6 +90,12 @@ function buildSystemPrompt(scene, intentResult, referenceResult, meta = {}) {
     }[rel.band] || "";
     if (toneMap) blocks.push("", `[關係語氣]\n${toneMap}`);
   }
+
+  // ── Runtime: platform awareness + capabilities ─────────────────────────────
+  // Lightweight background info — tells 晴 which platform she's on and what
+  // real capabilities she has. Low-priority, not meant to dominate the prompt.
+  const runtimeBlock = buildRuntimeBlock(meta.connector, meta.channel);
+  blocks.push("", runtimeBlock);
 
   return blocks.join("\n");
 }
@@ -284,30 +291,30 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
   const tradingPriority = isTrading ? "low" : "optional";
 
   // Build a single structured position block when there is actual position data
-  const positionLines = [];
-  if (meta.open_real_trades) {
+  const positionLines = isTrading ? [] : null;
+  if (isTrading && meta.open_real_trades) {
     positionLines.push(`[實盤倉位]\n${meta.open_real_trades}`);
   }
-  if (meta.open_sim_trades) {
+  if (isTrading && meta.open_sim_trades) {
     positionLines.push(`[模擬倉位（掛單中）]\n${meta.open_sim_trades}`);
   }
-  if (meta.sim_positions) {
+  if (isTrading && meta.sim_positions) {
     positionLines.push(`[近期市場看法]\n${meta.sim_positions}`);
   }
-  if (positionLines.length > 0) {
+  if (isTrading && positionLines.length > 0) {
     blocks.push({ priority: tradingPriority, text: `[你的倉位與市場看法]\n${positionLines.join("\n\n")}\n（以上是你目前的倉位紀錄和看法快照，對方問到時可以自然分享，未問到則不主動提）\n` });
   }
 
-  if (meta.market_context) {
+  if (isTrading && meta.market_context) {
     blocks.push({ priority: tradingPriority, text: `（你剛瞄了一眼市場：${meta.market_context.replace(/\n/g, " / ")}）\n` });
   }
-  if (meta.trading_self) {
+  if (isTrading && meta.trading_self) {
     blocks.push({ priority: tradingPriority, text: `（你的交易學習狀況：${meta.trading_self}）\n` });
   }
-  if (meta.trading_mood) {
+  if (isTrading && meta.trading_mood) {
     blocks.push({ priority: "optional", text: `${meta.trading_mood}\n` });
   }
-  if (meta.trading_anticipation) {
+  if (isTrading && meta.trading_anticipation) {
     blocks.push({ priority: "optional", text: `${meta.trading_anticipation}\n` });
   }
 

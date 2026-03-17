@@ -140,6 +140,44 @@ async function analyzeSetup(setup) {
   return llmCall(prompt);
 }
 
+/**
+ * Generate 晴's learning insight from recent observation history.
+ * Looks for correlations between RSI/KDJ indicator states and DTFX setup quality.
+ * KDJ/RSI are reference only — DTFX score is the sole open-position criterion.
+ * @param {Array} observations — recent _history entries from trading_scheduler
+ * @returns {Promise<string>} insight in 晴's voice
+ */
+async function generateObservationInsight(observations) {
+  if (!observations || observations.length < 5) return "（觀察樣本不足，無法生成學習洞察）";
+
+  const recent      = observations.slice(-30);
+  const highQuality = recent.filter(o => (o.score || 0) >= 60);
+  const lowQuality  = recent.filter(o => (o.score || 0) < 45);
+
+  const formatObs = arr => arr.slice(-8).map(o => {
+    const parts = [`score=${o.score}`, `grade=${o.grade}`, `bias=${o.bias}`, `RR≈${o.rr ?? "?"}`];
+    if (o.rsi  != null)          parts.push(`RSI=${o.rsi}`);
+    if (o.kdj?.k != null)        parts.push(`KDJ(K=${o.kdj.k} D=${o.kdj.d} J=${o.kdj.j})`);
+    return parts.join(" ");
+  }).join("\n");
+
+  const prompt = [
+    "你是晴，正在從自己的看盤觀察記錄中學習，尋找指標模式和 DTFX 結構品質之間的關聯。",
+    "用第一人稱，約 3–5 句。語氣像在自言自語地思考，不要給確定性結論。",
+    "特別注意：RSI 和 KDJ 只是輔助指標，不能作為開倉標準。你的開倉是由 DTFX 評分決定的。",
+    "如果看不出規律，直接說看不出來。",
+    "",
+    `最近 ${recent.length} 次觀察中，高品質 setup（score ≥ 60）共 ${highQuality.length} 次，低品質（score < 45）共 ${lowQuality.length} 次。`,
+    "",
+    highQuality.length > 0 ? `高品質 setup 時的指標狀態：\n${formatObs(highQuality)}` : "",
+    lowQuality.length > 0  ? `\n低品質 setup 時的指標狀態：\n${formatObs(lowQuality)}`  : "",
+    "",
+    "你觀察到指標狀態和 DTFX setup 品質之間有什麼規律嗎？對你下次看盤有沒有參考價值？",
+  ].filter(Boolean).join("\n");
+
+  return llmCall(prompt);
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function llmCall(prompt) {
@@ -159,4 +197,4 @@ async function llmCall(prompt) {
   }
 }
 
-module.exports = { reflectOnTrade, periodicReview, generateHypothesis, analyzeSetup };
+module.exports = { reflectOnTrade, periodicReview, generateHypothesis, analyzeSetup, generateObservationInsight };

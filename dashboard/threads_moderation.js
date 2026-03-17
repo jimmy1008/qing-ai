@@ -77,14 +77,8 @@ async function ensureModerationAuth() {
     data.role === "superadmin" ? "目前角色：超級管理員" : "目前角色：審核員";
 }
 
-async function moderationFetch(url, options = {}) {
-  const token = localStorage.getItem("teamToken") || "";
-  const headers = {
-    ...(options.headers || {}),
-    "x-team-token": token,
-  };
-  return fetch(url, { ...options, headers });
-}
+// moderationFetch → alias to authFetch (provided by auth.js)
+const moderationFetch = authFetch;
 
 function setPageError(message) {
   const container = document.getElementById("moderationList");
@@ -170,6 +164,7 @@ async function editItem(id, currentContent) {
 async function regenerateItem(id) {
   const res = await moderationFetch(`/api/threads-moderation/${id}/regenerate`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
   });
 
   if (!res.ok) {
@@ -274,7 +269,7 @@ async function bootstrapModerationPage() {
     await loadQueue();
     setInterval(() => {
       loadQueue().catch(() => {});
-    }, 5000);
+    }, 15000);
   } catch (err) {
     const message =
       err.message === "unauthorized" || err.message === "forbidden"

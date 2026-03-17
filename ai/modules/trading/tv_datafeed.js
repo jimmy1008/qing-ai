@@ -218,4 +218,29 @@ async function fetchFundingOI(asset) {
   };
 }
 
-module.exports = { fetchSnapshot, fetchCandles, fetchMultiTF, fetchFundingOI, TV_SYMBOL, TV_RESOLUTION };
+/**
+ * Compute KDJ indicator from OHLCV candles (9-period, EMA smoothing).
+ * Formula: RSV = (close − lowest_low) / (highest_high − lowest_low) × 100
+ *          K(i) = 2/3 × K(i-1) + 1/3 × RSV   (seed K=50)
+ *          D(i) = 2/3 × D(i-1) + 1/3 × K(i)  (seed D=50)
+ *          J(i) = 3K − 2D
+ * Returns null if candles are insufficient.
+ * @param {Array<{close:number,high:number,low:number}>} candles
+ * @param {number} period — default 9
+ */
+function computeKDJ(candles, period = 9) {
+  if (!candles || candles.length < period) return null;
+  let k = 50, d = 50;
+  for (let i = period - 1; i < candles.length; i++) {
+    const slice   = candles.slice(i - period + 1, i + 1);
+    const highest = Math.max(...slice.map(c => c.high));
+    const lowest  = Math.min(...slice.map(c => c.low));
+    const rsv     = highest === lowest ? 50 : ((candles[i].close - lowest) / (highest - lowest)) * 100;
+    k = (2 / 3) * k + (1 / 3) * rsv;
+    d = (2 / 3) * d + (1 / 3) * k;
+  }
+  const j = 3 * k - 2 * d;
+  return { k: Number(k.toFixed(1)), d: Number(d.toFixed(1)), j: Number(j.toFixed(1)) };
+}
+
+module.exports = { fetchSnapshot, fetchCandles, fetchMultiTF, fetchFundingOI, computeKDJ, TV_SYMBOL, TV_RESOLUTION };

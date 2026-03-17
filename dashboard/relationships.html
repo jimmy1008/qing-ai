@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>關係記憶 — SocialAI</title>
   <link rel="stylesheet" href="style.css">
+  <script src="auth.js"></script>
   <style>
     .rel-layout {
       display: grid;
@@ -107,8 +108,9 @@
       border: 1px solid #3a2020;
       color: #f87171;
       border-radius: 6px;
-      padding: 3px 10px;
+      padding: 8px 14px;
       font-size: 12px;
+      min-height: 36px;
       cursor: pointer;
       white-space: nowrap;
       flex-shrink: 0;
@@ -140,6 +142,7 @@
       border-radius: 8px;
       padding: 8px 16px;
       font-size: 13px;
+      min-height: 36px;
       cursor: pointer;
     }
     .btn-add:hover { background: #2a4f7e; }
@@ -205,21 +208,10 @@
   </div>
 
   <script>
-    const TOKEN_KEY = "team_token";
     let currentUserId = null;
     let users = [];
 
-    function getToken() {
-      return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || "";
-    }
-
-    function authFetch(url, opts = {}) {
-      const token = getToken();
-      return fetch(url, {
-        ...opts,
-        headers: { ...(opts.headers || {}), "X-Team-Token": token, "Content-Type": "application/json" },
-      });
-    }
+    // getToken / authFetch / showToast provided by auth.js
 
     function fmt(ts) {
       if (!ts) return "從未";
@@ -240,8 +232,8 @@
       try {
         const res = await authFetch("/api/relationships");
         if (res.status === 401 || res.status === 403) {
-          const tok = prompt("請輸入 SuperAdmin Token：");
-          if (tok) { localStorage.setItem(TOKEN_KEY, tok); return loadUsers(); }
+          const tok = prompt("請輸入 Team Token：");
+          if (tok) { localStorage.setItem("teamToken", tok); return loadUsers(); }
           return;
         }
         const data = await res.json();
@@ -321,14 +313,15 @@
       if (!text) return;
       const res = await authFetch(`/api/relationships/${userId}/memories`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
       if (res.ok) {
         input.value = "";
-        setStatus("已新增");
+        showToast("記憶已新增", "success");
         await refreshUser(userId);
       } else {
-        setStatus("新增失敗");
+        showToast("新增失敗", "error");
       }
     }
 
@@ -336,10 +329,10 @@
       if (!confirm("確定刪除這條記憶？")) return;
       const res = await authFetch(`/api/relationships/${userId}/memories/${index}`, { method: "DELETE" });
       if (res.ok) {
-        setStatus("已刪除");
+        showToast("記憶已刪除", "info");
         await refreshUser(userId);
       } else {
-        setStatus("刪除失敗");
+        showToast("刪除失敗", "error");
       }
     }
 
@@ -355,14 +348,11 @@
       }
     }
 
-    function setStatus(msg) {
-      const el = document.getElementById("statusMsg");
-      if (!el) return;
-      el.textContent = msg;
-      setTimeout(() => { if (el) el.textContent = ""; }, 2500);
-    }
+    function setStatus(msg) { /* replaced by showToast — kept for compatibility */ }
 
     loadUsers();
+    // Background refresh every 30 s — picks up new users without full page reload
+    setInterval(() => { loadUsers(); }, 30000);
   </script>
 </body>
 </html>
