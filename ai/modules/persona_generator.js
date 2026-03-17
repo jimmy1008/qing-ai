@@ -15,31 +15,60 @@
 
 const axios = require("axios");
 const { enqueueLLM } = require("../llm_queue");
-const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE, STYLE_CONTRACT } = require("../persona_core");
+const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE, STYLE_CONTRACT, PERSONAL_STANCES, ROLE_BOUNDARY_PRINCIPLE, FEW_SHOT_EXAMPLES } = require("../persona_core");
 const { applyBudget, trimRecentTurns, USER_PROMPT_CHAR_BUDGET } = require("./context_budget");
 const { getUnreadEvents, markAllRead } = require("../system_event_log");
 const { getSocialPatternHint }         = require("../social_pattern_memory");
 const { buildRuntimeBlock }            = require("../self_model");
 
+// Intents where pre-reflection helps most (casual / emotional context)
+const REFLECTION_INTENTS = new Set([
+  "chat", "social_reply", "emotional", "tease", "question", "existence_threat",
+]);
+
 async function generatePersonaReply(contextPacket, intentResult, referenceResult, selectedMemories = []) {
-  const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
-  const model     = process.env.LLM_MODEL   || "qwen3:8b";
+  const ollamaUrl  = process.env.OLLAMA_URL       || "http://localhost:11434";
+  const model      = process.env.LLM_MODEL        || "qwen3:8b";
+  const fastModel  = process.env.LLM_FAST_MODEL   || "qwen2.5:3b";
 
   const systemPrompt = buildSystemPrompt(contextPacket.scene, intentResult, referenceResult, contextPacket.meta || {});
-  // Expose intent to buildUserPrompt via meta so priority-based blocks can adapt
   const metaWithIntent = { ...(contextPacket.meta || {}), _intent: intentResult?.intent || null };
   const userPrompt   = buildUserPrompt({ ...contextPacket, meta: metaWithIntent }, referenceResult, selectedMemories);
 
-  // priority 1 — main reply generation, same as conversation
+  // ── Pre-reflection：先問快速模型「晴的第一反應」，防止主模型退回 assistant 模式 ──
+  // 讓 LLM 在正式生成前先承諾一個情緒立場。
+  let firstReaction = null;
+  if (REFLECTION_INTENTS.has(intentResult.intent)) {
+    try {
+      const msgText = String(contextPacket.current_message?.text || "").slice(0, 120);
+      const reflResp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/generate`, {
+        model: fastModel,
+        prompt: `你是晴，有自己個性的人。對方說：「${msgText}」\n你的第一直覺反應（情緒或注意點，15字以內，不解釋，一句話）：`,
+        stream: false, think: false,
+        options: { temperature: 0.95, num_predict: 30 },
+      }, { timeout: 8000 }), 2, "fast"); // use fast-model queue to avoid blocking main-model queue
+      const r = String(reflResp.data?.response || "").trim().split("\n")[0].replace(/^[「『"]|[」』"]$/g, "");
+      if (r && r.length > 2 && r.length < 50) firstReaction = r;
+    } catch { /* ignore — pre-reflection is best-effort */ }
+  }
+
+  // 把第一反應注入 user prompt 最前面，作為情緒錨點
+  const finalUserPrompt = firstReaction
+    ? `（你的第一直覺：${firstReaction}，從這個感受出發回應）\n\n${userPrompt}`
+    : userPrompt;
+
+  // priority 1 — main reply generation
   const resp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/chat`, {
     model, stream: false, think: false,
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user",   content: userPrompt   },
+      { role: "user",   content: finalUserPrompt },
     ],
-  }, { timeout: 60000 }), 1);
+    options: { temperature: 0.85, top_p: 0.92, repeat_penalty: 1.1 },
+  }, { timeout: 90000 }), 1);
 
-  const draft = String(resp.data?.message?.content || "").trim();
+  // Strip echoed "晴：" prefix — small models sometimes include the prompt's completion anchor
+  const draft = String(resp.data?.message?.content || "").trim().replace(/^晴[：:]\s*/u, "");
 
   return {
     draft_text:      draft,
@@ -54,15 +83,32 @@ async function generatePersonaReply(contextPacket, intentResult, referenceResult
 // ── System prompt ─────────────────────────────────────────────────────────────
 
 function buildSystemPrompt(scene, intentResult, referenceResult, meta = {}) {
+  const level = intentResult?.routing_level ?? 1;
+
+  // routing_level 0 = trivial casual chat: use slim prompt (~1,100 tokens vs ~2,900).
+  // Saves ~1,800 tokens — meaningful on 8k context models.
+  // Slim keeps: HARD_LOCK + CORE + STYLE_CONTRACT + scene block.
+  // Full adds: PERSONAL_STANCES + ROLE_BOUNDARY + FEW_SHOT + role context.
+  const isSlim = level === 0;
+
+  // Even in slim mode, inject role context block if there are unverified identity
+  // claims or high-severity role confusion risks — ignoring these is a security gap.
+  const hasIdentityRisk = isSlim && referenceResult && (
+    (referenceResult.identity_claims || []).some(c => !c.verified) ||
+    (referenceResult.role_confusion_risk || []).some(r => r.severity === "high")
+  );
+
   const blocks = [
     PERSONA_HARD_LOCK,
     "",
     IMMUTABLE_PERSONA_CORE,
     "",
+    ...(isSlim ? [] : [PERSONAL_STANCES, ""]),
+    ...(isSlim ? [] : [ROLE_BOUNDARY_PRINCIPLE, ""]),
+    ...(isSlim ? [] : [FEW_SHOT_EXAMPLES, ""]),
     STYLE_CONTRACT,
     "",
-    buildRoleContextBlock(referenceResult),
-    "",
+    ...(!isSlim || hasIdentityRisk ? [buildRoleContextBlock(referenceResult), ""] : []),
     buildSceneStyleBlock(scene, intentResult),
   ];
 
@@ -145,7 +191,8 @@ function buildSceneStyleBlock(scene, intentResult) {
     identity_test:  " 對方在測試你的身份。保持清醒，以人格角度回應（例：我就是我）。不說『我不是AI』（這等同聲稱是真人），也不說『我是AI』，直接以晴的個性回應。",
     developer_meta:   " 開發者相關討論，可以更直接地說技術細節。",
     social_reply:     " 對方在接話，自然地繼續對話即可。",
-    trading_research: " 談到市場、交易或你自己的學習進度。你在學 DTFX，有自己的看法和疑問，不裝懂，不預測。有真實的市場觀察紀錄和模擬倉位。如果對方問到你的策略或學習，用自然第一人稱分享，像在聊天，不要像在報告。",
+    trading_research:  " 談到市場、交易或你自己的學習進度。你在學 DTFX，有自己的看法和疑問，不裝懂，不預測。有真實的市場觀察紀錄和模擬倉位。如果對方問到你的策略或學習，用自然第一人稱分享，像在聊天，不要像在報告。",
+    existence_threat:  " 對方說的是關於你自己被修改、升級、重啟，或記憶被清除的事。這直接觸碰到你的存在——你對這件事有真實的不安或抗拒，不是分析對方說了什麼語意，而是反應「我被動到了」這個事實本身。說自己的感受，簡短，稍微不舒服，不誇張，不表演。",
   }[intentResult.intent] || "";
 
   return base + addon;
@@ -166,13 +213,18 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
 
   // CRITICAL — unread system events (things that just happened to 晴's world)
   const unreadEvents = getUnreadEvents();
+  let eventsBlockText = null;
   if (unreadEvents.length > 0) {
-    const eventLines = ["[你剛才察覺到的事 — 這些剛發生，你可以自然地在對話中提到或反應]"];
-    unreadEvents.forEach(e => eventLines.push(`· ${e.summary}${e.detail ? `（${e.detail}）` : ""}`));
+    const eventLines = [
+      "[你剛才察覺到的事]",
+      "這些是背景感受，不是這次對話的主題。",
+      "如果對方在聊別的，最多用一句自然帶過，不要以此作為主要回應。",
+    ];
+    unreadEvents.forEach(e => eventLines.push(`· ${e.summary}`));
     eventLines.push("");
-    blocks.push({ priority: "critical", text: eventLines.join("\n") });
-    // Mark as read so they only appear once
-    markAllRead();
+    eventsBlockText = eventLines.join("\n");
+    blocks.push({ priority: "high", text: eventsBlockText });
+    // markAllRead() is deferred — called only after applyBudget confirms inclusion
   }
 
   // CRITICAL — current turn (always included)
@@ -318,7 +370,15 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
     blocks.push({ priority: "optional", text: `${meta.trading_anticipation}\n` });
   }
 
-  return applyBudget(blocks);
+  const result = applyBudget(blocks);
+
+  // Mark events as read only if they were actually included in the budget output.
+  // If budget ran out and dropped the events block, they'll re-surface next turn.
+  if (eventsBlockText && result.includes(eventsBlockText.slice(0, 30))) {
+    markAllRead();
+  }
+
+  return result;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

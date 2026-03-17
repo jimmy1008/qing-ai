@@ -1,38 +1,20 @@
 "use strict";
 
-const { generatePersonaReply } = require("../../modules/persona_generator");
 const { judgeResponse } = require("../../modules/response_judge");
 
-const MAX_RETRY = 2;
-
+// No retry loop — generate once, judge once, let repair stage handle any issues.
+// Removing retries here reduces worst-case LLM calls from 5 → 3
+// (pre-reflection + main generate + rewrite if needed).
 async function run(_event, ctx) {
-  let draftResult = ctx.draftResult;
-  let judgeResult = judgeResponse(
-    draftResult,
+  const judgeResult = judgeResponse(
+    ctx.draftResult,
     ctx.contextPacket,
     ctx.intentResult,
     ctx.referenceResult,
   );
 
-  while (!judgeResult.pass && ctx.attempts < MAX_RETRY) {
-    draftResult = await generatePersonaReply(
-      ctx.contextPacket,
-      ctx.intentResult,
-      ctx.referenceResult,
-      ctx.selectedMemories,
-    );
-    judgeResult = judgeResponse(
-      draftResult,
-      ctx.contextPacket,
-      ctx.intentResult,
-      ctx.referenceResult,
-    );
-    ctx.attempts += 1;
-  }
-
-  ctx.draftResult = draftResult;
   ctx.judgeResult = judgeResult;
-  ctx.finalText = judgeResult.fixed_text || draftResult.draft_text;
+  ctx.finalText   = judgeResult.fixed_text || ctx.draftResult.draft_text;
   ctx.repairAction = "none";
 }
 
