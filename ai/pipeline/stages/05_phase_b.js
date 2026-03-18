@@ -195,10 +195,13 @@ async function run(_event, ctx) {
         timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
       });
 
+      // Converts English direction to unambiguous Chinese to prevent model confusion
+      const dirZh = (d) => (String(d).toLowerCase() === "long" ? "多單(long)" : String(d).toLowerCase() === "short" ? "空單(short)" : d);
+
       const openReal = getOpenTrades();
       if (openReal.length > 0) {
         contextPacket.meta.open_real_trades = openReal.map((t) =>
-          `${t.pair} ${t.direction} entry ${t.entry} stop ${t.stop} target ${t.target} RR ${t.rr_planned ?? "?"} ${tw(t.created_at)}`,
+          `${t.pair} ${dirZh(t.direction)} 入場${t.entry} 止損${t.stop} 目標${t.target} RR ${t.rr_planned ?? "?"} ${tw(t.created_at)}`,
         ).join("\n");
       }
 
@@ -207,13 +210,13 @@ async function run(_event, ctx) {
       if (openSim.length > 0) {
         contextPacket.meta.open_sim_trades = openSim.map((t) => {
           const stale = (Date.now() - t.created_at) > TRADE_STALE_MS ? " [持倉超12h]" : "";
-          return `${t.pair} ${t.direction} sim-entry ${t.entry} stop ${t.stop} target ${t.target} RR ${t.rr_planned ?? "?"} ${tw(t.created_at)}${stale}`;
+          return `${t.pair} ${dirZh(t.direction)} 模擬入場${t.entry} 止損${t.stop} 目標${t.target} RR ${t.rr_planned ?? "?"} ${tw(t.created_at)}${stale}`;
         }).join("\n");
       }
 
       const views = getRecentSimViews(4);
       contextPacket.meta.sim_positions = views.length > 0
-        ? views.map((v) => `${v.asset} ${v.direction} entry ${v.entry} stop ${v.stop} target ${v.target} RR ${v.rr} ${tw(v.observed_at)}`).join("\n")
+        ? views.map((v) => `${v.asset} ${dirZh(v.direction)} 入場${v.entry} 止損${v.stop} 目標${v.target} RR ${v.rr} ${tw(v.observed_at)}`).join("\n")
         : null;
 
       contextPacket.meta.trading_self = buildTradingSelfContext();
