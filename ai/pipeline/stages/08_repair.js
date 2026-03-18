@@ -5,6 +5,7 @@ const { repairReply } = require("../../modules/repair_rewriter");
 const { maybeWriteMemory } = require("../../modules/memory_writer");
 const { makeSessionKey, addTurn } = require("../../memory/working_memory");
 const { scoreAndLogDialogue } = require("../../quality/dialogue_quality_scorer");
+const { isTradeCritique, maybeLearnFromCritique } = require("../../modules/trading/trade_lessons");
 
 async function generateFallback(contextPacket) {
   const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
@@ -62,6 +63,12 @@ async function run(event, ctx) {
   );
 
   maybeWriteMemory(ctx.contextPacket, ctx.intentResult, ctx.finalText).catch(() => {});
+
+  // Extract trading principle if user is critiquing 晴's execution
+  if (isTradeCritique(ctx.text, ctx.intentResult?.intent)) {
+    const tradeCtx = ctx.contextPacket?.meta?.open_sim_trades || ctx.contextPacket?.meta?.open_real_trades || null;
+    maybeLearnFromCritique(ctx.text, tradeCtx).catch(() => {});
+  }
   scoreAndLogDialogue({
     userText: ctx.text,
     replyText: ctx.finalText,

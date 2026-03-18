@@ -35,6 +35,7 @@ const {
   getRecentSimViews,
 } = require("../../modules/trading/trading_scheduler");
 const { getOpenTrades, getOpenSimulatedTrades } = require("../../modules/trading/trade_journal");
+const { getRecentLessons } = require("../../modules/trading/trade_lessons");
 
 const TRADES_MEM = path.join(__dirname, "../../../memory/trades");
 const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
@@ -95,6 +96,13 @@ function buildTradingSelfContext() {
   try {
     const q = getCuriosity();
     if (q) parts.push(`近期想驗證：${q}`);
+  } catch { /* ignore */ }
+
+  try {
+    const lessons = getRecentLessons(3);
+    if (lessons.length > 0) {
+      parts.push(`【從對話中學到的執行原則】${lessons.map((l, i) => `${i + 1}.${l}`).join("；")}`);
+    }
   } catch { /* ignore */ }
 
   return parts.join(" | ");
