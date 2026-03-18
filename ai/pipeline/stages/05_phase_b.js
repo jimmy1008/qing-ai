@@ -13,6 +13,19 @@ const { getCurrentActivity } = require("../../daily_activity");
 const { recordMessage: recordTopicHeat, getHeatModifier } = require("../../topic_heat");
 
 const { fetchSnapshot } = require("../../modules/trading/tv_datafeed");
+
+// Matches requests for a chart screenshot in a trading context
+const CHART_RE = /截圖|給我看|看圖|圖表|在哪|哪裡|位置|chart|show.?me|看一下圖/i;
+// Maps interval strings mentioned by user to TradingView resolution codes
+function detectInterval(text) {
+  if (/4h|4小時/i.test(text)) return "240";
+  if (/15m|15分/i.test(text)) return "15";
+  if (/5m|5分/i.test(text))  return "5";
+  return "60"; // default: 1H
+}
+function detectAsset(text) {
+  return /eth/i.test(text) ? "ETH" : "BTC";
+}
 const {
   getSchedulerStatus,
   getTradingMoodModifier,
@@ -190,10 +203,12 @@ async function run(_event, ctx) {
       }
 
       const openSim = getOpenSimulatedTrades();
+      const TRADE_STALE_MS = 12 * 60 * 60 * 1000; // 12h — trades open longer are flagged
       if (openSim.length > 0) {
-        contextPacket.meta.open_sim_trades = openSim.map((t) =>
-          `${t.pair} ${t.direction} sim-entry ${t.entry} stop ${t.stop} target ${t.target} RR ${t.rr_planned ?? "?"} ${tw(t.created_at)}`,
-        ).join("\n");
+        contextPacket.meta.open_sim_trades = openSim.map((t) => {
+          const stale = (Date.now() - t.created_at) > TRADE_STALE_MS ? " [持倉超12h]" : "";
+          return `${t.pair} ${t.direction} sim-entry ${t.entry} stop ${t.stop} target ${t.target} RR ${t.rr_planned ?? "?"} ${tw(t.created_at)}${stale}`;
+        }).join("\n");
       }
 
       const views = getRecentSimViews(4);
@@ -203,6 +218,39 @@ async function run(_event, ctx) {
 
       contextPacket.meta.trading_self = buildTradingSelfContext();
     } catch { /* ignore */ }
+
+    // ── Inject latest DTFX multi-TF structure from observations cache ────────
+    // Skip stale observations (>2h old) — injecting outdated structure misleads the AI.
+    const OBS_STALE_MS = 2 * 60 * 60 * 1000;
+    try {
+      const OBS_FILE = path.join(TRADES_MEM, "observations.json");
+      if (fs.existsSync(OBS_FILE)) {
+        const obs = JSON.parse(fs.readFileSync(OBS_FILE, "utf8"));
+        for (const asset of ["BTC", "ETH"]) {
+          const last = (obs[asset] || []).slice(-1)[0];
+          if (!last) continue;
+          const ageMs  = Date.now() - last.observed_at;
+          const ageMin = Math.round(ageMs / 60000);
+          if (ageMs > OBS_STALE_MS) continue; // skip — too old to be useful
+          const conf   = last.confluence || {};
+          const key    = asset === "BTC" ? "btc_structure" : "eth_structure";
+          contextPacket.meta[key] = [
+            `${asset} 結構（${ageMin}分前）：偏向=${conf.overall_bias ?? "?"} 評分=${conf.avg_setup_score ?? "?"}/100`,
+            `4H=${last.structure?.["4H"]?.trend ?? "?"} 1H=${last.structure?.["1H"]?.trend ?? "?"} 15M=${last.structure?.["15M"]?.trend ?? "?"}`,
+            (last.latest_bos?.type && last.latest_bos?.level)   ? `最近BOS：${last.latest_bos.type} @ ${last.latest_bos.level}` : null,
+            (last.latest_choch?.type && last.latest_choch?.level) ? `最近CHoCH：${last.latest_choch.type} @ ${last.latest_choch.level}` : null,
+          ].filter(Boolean).join(" | ");
+        }
+      }
+    } catch { /* ignore */ }
+
+    // ── Chart screenshot request detection ───────────────────────────────────
+    if (CHART_RE.test(text)) {
+      ctx.chartRequest = {
+        asset:    detectAsset(text),
+        interval: detectInterval(text),
+      };
+    }
   }
 
   if (intentResult.intent === "trading_research") {

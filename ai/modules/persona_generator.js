@@ -213,17 +213,19 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
 
   // CRITICAL — unread system events (things that just happened to 晴's world)
   const unreadEvents = getUnreadEvents();
-  let eventsBlockText = null;
+  const EVENTS_SENTINEL = "\x00events";  // unique marker — never appears in real text
+  let hasUnreadEvents = false;
   if (unreadEvents.length > 0) {
     const eventLines = [
+      EVENTS_SENTINEL,
       "[你剛才察覺到的事]",
       "這些是背景感受，不是這次對話的主題。",
       "如果對方在聊別的，最多用一句自然帶過，不要以此作為主要回應。",
     ];
     unreadEvents.forEach(e => eventLines.push(`· ${e.summary}`));
     eventLines.push("");
-    eventsBlockText = eventLines.join("\n");
-    blocks.push({ priority: "high", text: eventsBlockText });
+    blocks.push({ priority: "high", text: eventLines.join("\n") });
+    hasUnreadEvents = true;
     // markAllRead() is deferred — called only after applyBudget confirms inclusion
   }
 
@@ -370,15 +372,16 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
     blocks.push({ priority: "optional", text: `${meta.trading_anticipation}\n` });
   }
 
-  const result = applyBudget(blocks);
+  const rawResult = applyBudget(blocks);
 
   // Mark events as read only if they were actually included in the budget output.
   // If budget ran out and dropped the events block, they'll re-surface next turn.
-  if (eventsBlockText && result.includes(eventsBlockText.slice(0, 30))) {
+  if (hasUnreadEvents && rawResult.includes(EVENTS_SENTINEL)) {
     markAllRead();
   }
 
-  return result;
+  // Strip the sentinel marker before returning — must not appear in the final prompt.
+  return rawResult.replace(EVENTS_SENTINEL + "\n", "");
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

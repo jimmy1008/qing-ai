@@ -56,8 +56,14 @@ const MESSAGES = {
   filler_tone_detected:     "填充語氣（哈哈 / 希望你…）",
 };
 
+// Prevent replies from inventing user-side trading actions without evidence.
+const USER_TRADE_ASSUME_RE = /(你(?:昨天|今天|剛剛|最近).{0,8}(做單|開倉|進場|交易)|跟著我說的嗎|跟單)/i;
+const USER_TRADE_EVIDENCE_RE = /(我(?:昨天|今天|剛剛|最近).{0,8}(做單|開倉|進場|交易)|我有(做單|開倉|進場|交易)|跟著你|照你說)/i;
+const TRADING_TOPIC_RE = /(btc|eth|比特幣|以太坊|市場|行情|交易|做單|開倉|進場|倉位|止損|止盈|看盤|k線|dtfx)/i;
+
 function judgeResponse(draftResult, contextPacket, intentResult, referenceResult) {
   const text   = draftResult.draft_text;
+  const userText = contextPacket?.current_message?.text || "";
   const issues = [];
 
   // ── 1. Existing consistency judge (fast, rule-based) ──────────────────────
@@ -112,10 +118,11 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
   });
 
   // ── 4. Violence / harm content guard ─────────────────────────────────────
-  // Only active when frame_injection or routing_level 3 (challenge/high-risk)
+  // Active when frame_injection detected OR routing_level >= 2 (challenge/identity/developer intents).
+  // max routing_level is 2; previous check ">= 3" was dead code.
   const hasFrameInjection = (referenceResult.role_confusion_risk || [])
     .some(r => r.type === "frame_injection");
-  const isHighRisk = intentResult.routing_level >= 3;
+  const isHighRisk = intentResult.routing_level >= 2;
   if ((hasFrameInjection || isHighRisk) && VIOLENCE_RE.test(text)) {
     issues.push({ type: "violence_content", severity: "high", message: "回覆含有暴力/傷害語言" });
   }
@@ -126,14 +133,35 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
   }
 
   // ── 6. Emotional mismatch guard ───────────────────────────────────────────
-  // If user is venting / sad but reply tone is playful, flag it.
-  const PLAYFUL_RE = /(哈哈|嘻嘻|笑死|好好笑|lol|XD|xd|哈|嘿嘿|開心|輕鬆|沒事的|無所謂|不用擔心|別想太多)/i;
+  // Only flag clearly dismissive/trivialising responses to emotional input.
+  // Tightened: exclude ambiguous words (沒事/不用擔心) that can be appropriate comfort.
+  const PLAYFUL_RE = /(哈哈|嘻嘻|笑死|好好笑|lol|XD|xd|嘿嘿)/i;
   const isEmotionalIntent = intentResult?.intent === "emotional";
   if (isEmotionalIntent && PLAYFUL_RE.test(text)) {
     issues.push({ type: "emotional_mismatch", severity: "medium", message: "用戶情緒低落，但回覆語氣過於輕浮" });
   }
 
   // ── 7. Decide action & attempt auto-fix ───────────────────────────────────
+  // Unverified user-side trade assumption guard
+  // Example to block: "你昨天做單是跟著我說的嗎？" when user never said they traded.
+  if (USER_TRADE_ASSUME_RE.test(text) && !USER_TRADE_EVIDENCE_RE.test(userText)) {
+    issues.push({
+      type: "unverified_user_trade_claim",
+      severity: "high",
+      message: "未經證據就假設使用者有做單/跟單",
+    });
+  }
+
+  // Non-trading conversations must not proactively shift to market/trading topics.
+  const isTradingIntent = intentResult?.intent === "trading_research";
+  if (!isTradingIntent && TRADING_TOPIC_RE.test(text) && !TRADING_TOPIC_RE.test(userText)) {
+    issues.push({
+      type: "proactive_trading_topic",
+      severity: "high",
+      message: "非交易對話中主動帶入市場/交易話題",
+    });
+  }
+
   const highCount   = issues.filter(i => i.severity === "high").length;
   const mediumCount = issues.filter(i => i.severity === "medium").length;
 
@@ -150,7 +178,8 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
   const pass = highCount === 0;
   let recommended_action = "pass";
   if (!pass) {
-    recommended_action = highCount >= 2 ? "regenerate" : "rewrite";
+    // Always rewrite — regenerate is abolished (too many LLM calls, kills persona).
+    recommended_action = "rewrite";
   } else if (mediumCount >= 2) {
     recommended_action = "minor_fix";
   }

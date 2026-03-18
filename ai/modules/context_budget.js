@@ -5,9 +5,13 @@
  * Context Window Budget Manager for persona_generator.
  *
  * qwen3:8b default context: 8192 tokens.
- * System prompt estimate: ~600 tokens.
+ * System prompt actual size: ~2,900 tokens (HARD_LOCK ~1050 + CORE ~200 +
+ *   STANCES ~300 + ROLE_BOUNDARY ~450 + FEW_SHOT ~225 + STYLE ~175 +
+ *   dynamic blocks ~500). NOT 600 as previously estimated.
  * Reserved for output: ~400 tokens.
- * → User prompt budget: ~7200 tokens ≈ 14400 chars (mixed CJK/ASCII).
+ * → User prompt budget: 8192 - 2900 - 400 = 4892 tokens ≈ 9784 chars.
+ *   Set to 9500 for safety. Override with LLM_USER_PROMPT_BUDGET env var
+ *   if using a larger context model (e.g. qwen3:8b with num_ctx=32768).
  *
  * Token estimation: 1 token ≈ 2 chars (conservative for mixed text).
  *
@@ -19,7 +23,7 @@
  *   OPTIONAL  — emotional residue, daily activity, market/trading context
  */
 
-const USER_PROMPT_CHAR_BUDGET = 14000; // ~7000 tokens
+const USER_PROMPT_CHAR_BUDGET = Number(process.env.LLM_USER_PROMPT_BUDGET) || 9500;
 const CURRENT_MSG_MAX_CHARS   = 3000;  // hard cap on single user message
 const RECENT_TURNS_MAX        = 8;     // max turns before budget check
 const MEMORY_MAX              = 3;     // max episodic memories before budget check
@@ -73,7 +77,7 @@ function applyBudget(blocks) {
         remaining -= chars;
       } else if (remaining > 200 && priority === "high") {
         // Partial inclusion for high-priority: include as much as fits
-        const partial = block.text.slice(0, remaining - 50);
+        const partial = block.text.slice(0, Math.max(1, remaining - 50));
         if (partial.trim()) {
           output.push(partial);
           remaining = 0;
