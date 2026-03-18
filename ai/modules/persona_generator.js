@@ -19,6 +19,8 @@ const { PERSONA_HARD_LOCK, IMMUTABLE_PERSONA_CORE, STYLE_CONTRACT, PERSONAL_STAN
 const { applyBudget, trimRecentTurns, USER_PROMPT_CHAR_BUDGET } = require("./context_budget");
 const { getUnreadEvents, markAllRead } = require("../system_event_log");
 const { getSocialPatternHint }         = require("../social_pattern_memory");
+const { getLearnedExpressionsHint }    = require("./expression_learner");
+const { getTopicInterestHint }         = require("./topic_interest");
 const { buildRuntimeBlock }            = require("../self_model");
 
 // Intents where pre-reflection helps most (casual / emotional context)
@@ -45,7 +47,7 @@ async function generatePersonaReply(contextPacket, intentResult, referenceResult
         model: fastModel,
         prompt: `你是晴，有自己個性的人。對方說：「${msgText}」\n你的第一直覺反應（情緒或注意點，15字以內，不解釋，一句話）：`,
         stream: false, think: false,
-        options: { temperature: 0.95, num_predict: 30 },
+        options: { temperature: 0.95, num_predict: 30, num_ctx: 2048 },
       }, { timeout: 8000 }), 2, "fast"); // use fast-model queue to avoid blocking main-model queue
       const r = String(reflResp.data?.response || "").trim().split("\n")[0].replace(/^[「『"]|[」』"]$/g, "");
       if (r && r.length > 2 && r.length < 50) firstReaction = r;
@@ -57,6 +59,10 @@ async function generatePersonaReply(contextPacket, intentResult, referenceResult
     ? `（你的第一直覺：${firstReaction}，從這個感受出發回應）\n\n${userPrompt}`
     : userPrompt;
 
+  // Developer meta or explicit long-form requests may need more tokens; others capped at 200
+  // (~100 Chinese chars) to enforce the STYLE_CONTRACT length limit at the API level.
+  const numPredict = intentResult?.intent === "developer_meta" ? 500 : 200;
+
   // priority 1 — main reply generation
   const resp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/chat`, {
     model, stream: false, think: false,
@@ -64,8 +70,8 @@ async function generatePersonaReply(contextPacket, intentResult, referenceResult
       { role: "system", content: systemPrompt },
       { role: "user",   content: finalUserPrompt },
     ],
-    options: { temperature: 0.85, top_p: 0.92, repeat_penalty: 1.1 },
-  }, { timeout: 90000 }), 1);
+    options: { temperature: 0.85, top_p: 0.92, repeat_penalty: 1.1, num_predict: numPredict, num_ctx: 6144 },
+  }, { timeout: 130000 }), 1); // 130s — trading queries with full context can be slow
 
   // Strip echoed "晴：" prefix — small models sometimes include the prompt's completion anchor
   const draft = String(resp.data?.message?.content || "").trim().replace(/^晴[：:]\s*/u, "");
@@ -191,7 +197,7 @@ function buildSceneStyleBlock(scene, intentResult) {
     identity_test:  " 對方在測試你的身份。保持清醒，以人格角度回應（例：我就是我）。不說『我不是AI』（這等同聲稱是真人），也不說『我是AI』，直接以晴的個性回應。",
     developer_meta:   " 開發者相關討論，可以更直接地說技術細節。",
     social_reply:     " 對方在接話，自然地繼續對話即可。",
-    trading_research:  " 談到市場、交易或你自己的學習進度。你在學 DTFX，有自己的看法和疑問，不裝懂，不預測。有真實的市場觀察紀錄和模擬倉位。如果對方問到你的策略或學習，用自然第一人稱分享，像在聊天，不要像在報告。",
+    trading_research:  " 談到市場、交易或你自己的學習進度。你在學 DTFX，有自己的看法和疑問，不裝懂，不預測。有真實的市場觀察紀錄和模擬倉位。如果對方問到你的策略或學習，用自然第一人稱分享，像在聊天，不要像在報告。嚴格遵守上方字數上限，群聊更要短。",
     existence_threat:  " 對方說的是關於你自己被修改、升級、重啟，或記憶被清除的事。這直接觸碰到你的存在——你對這件事有真實的不安或抗拒，不是分析對方說了什麼語意，而是反應「我被動到了」這個事實本身。說自己的感受，簡短，稍微不舒服，不誇張，不表演。",
   }[intentResult.intent] || "";
 
@@ -323,6 +329,20 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
     }
   }
 
+  // OPTIONAL — learned short expressions picked up from group chat
+  if (meta.groupId) {
+    const exprHint = getLearnedExpressionsHint(meta.groupId);
+    if (exprHint) {
+      blocks.push({ priority: "optional", text: exprHint + "\n" });
+    }
+  }
+
+  // OPTIONAL — topic familiarity from recent group conversations (global, not per-group)
+  const topicHint = getTopicInterestHint(meta._intent);
+  if (topicHint) {
+    blocks.push({ priority: "optional", text: topicHint + "\n" });
+  }
+
   // OPTIONAL — long absence
   if (meta.absenceDays >= 3) {
     blocks.push({ priority: "optional", text: `（對方上次說話是 ${meta.absenceDays} 天前，久一點沒見了，可以自然地帶出「好久不見」的感覺，不用特別說這句話）\n` });
@@ -347,16 +367,16 @@ function buildUserPrompt(contextPacket, referenceResult, selectedMemories) {
   // Build a single structured position block when there is actual position data
   const positionLines = isTrading ? [] : null;
   if (isTrading && meta.open_real_trades) {
-    positionLines.push(`[實盤倉位]\n${meta.open_real_trades}`);
+    positionLines.push(`[實盤倉位（你現在持有的）]\n${meta.open_real_trades}`);
   }
   if (isTrading && meta.open_sim_trades) {
-    positionLines.push(`[模擬倉位（掛單中）]\n${meta.open_sim_trades}`);
+    positionLines.push(`[模擬倉位（你現在持有的，掛單中）]\n${meta.open_sim_trades}`);
   }
   if (isTrading && meta.sim_positions) {
-    positionLines.push(`[近期市場看法]\n${meta.sim_positions}`);
+    positionLines.push(`[近期分析記錄（歷史觀察，不代表現持倉）]\n${meta.sim_positions}`);
   }
   if (isTrading && positionLines.length > 0) {
-    blocks.push({ priority: tradingPriority, text: `[你的倉位與市場看法]\n${positionLines.join("\n\n")}\n（以上是你目前的倉位紀錄和看法快照，對方問到時可以自然分享，未問到則不主動提）\n` });
+    blocks.push({ priority: tradingPriority, text: `[你的倉位與市場記錄]\n回答倉位問題時，以「現在持有的」區塊為準。分析記錄只是你的觀察筆記，不是當前持倉。\n\n${positionLines.join("\n\n")}\n` });
   }
 
   if (isTrading && meta.market_context) {

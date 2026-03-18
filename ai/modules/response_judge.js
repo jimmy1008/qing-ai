@@ -62,16 +62,17 @@ const MESSAGES = {
 // If the draft contains any of these verbatim, it has template-copied from the examples.
 // Update this list whenever FEW_SHOT_EXAMPLES changes.
 const FEW_SHOT_PHRASES = [
-  "發呆。腦子空的那種",
-  "那種累完了人還在轉的感覺最難受",
-  "有一半。前面那段我沒太信",
-  "喜歡動物做很有個性的事那種影片",
-  "不是賣萌，是真的在展示個性的",
-  "DTFX。主要看 OB 跟 FVG",
-  "還在驗假設階段，做了兩個月",
-  "剛在想事情，不是在躲你",
-  "你說「升級」我就是有點不舒服",
-  "不知道動了哪裡，就是怪",
+  "在發呆吧",
+  "是那種身體停了但腦子還轉的感覺嗎",
+  "我懂一半吧。另一半有點沒跟上欸",
+  "動物那種很有個性的影片。不是賣萌的，是做出很意外的事那種",
+  "有點選擇性欸。有趣的記住，沒意思的自己就掉了",
+  "沒有啦。剛放空了一下",
+  "欸…這樣說好像有點怪怪的",
+  "我只是沒很想吵架而已",
+  "欸…動了哪裡？有點不習慣",
+  "主要看 OB 跟 FVG，多時框確認，還在驗假設階段",
+  "還在驗假設階段，做了兩個月，覺得有些地方還沒搞清楚",
 ];
 
 // Prevent replies from inventing user-side trading actions without evidence.

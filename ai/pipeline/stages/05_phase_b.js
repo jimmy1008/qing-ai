@@ -222,10 +222,14 @@ async function run(_event, ctx) {
         }).join("\n");
       }
 
-      const views = getRecentSimViews(4);
-      contextPacket.meta.sim_positions = views.length > 0
-        ? views.map((v) => `${v.asset} ${dirZh(v.direction)} 入場${v.entry} 止損${v.stop} 目標${v.target} RR ${v.rr} ${tw(v.observed_at)}`).join("\n")
-        : null;
+      // Only inject sim_views if there are no open sim trades — they share the same
+      // entry/stop/target format and cause the model to confuse observations with open positions.
+      if (openSim.length === 0) {
+        const views = getRecentSimViews(4);
+        contextPacket.meta.sim_positions = views.length > 0
+          ? views.map((v) => `${v.asset} ${dirZh(v.direction)} 入場${v.entry} 止損${v.stop} 目標${v.target} RR ${v.rr} ${tw(v.observed_at)}`).join("\n")
+          : null;
+      }
 
       contextPacket.meta.trading_self = buildTradingSelfContext();
     } catch { /* ignore */ }

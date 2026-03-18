@@ -57,7 +57,8 @@ async function repairReply(draftResult, judgeResult, contextPacket, intentResult
   }
 
   if (action === "regenerate") {
-    return regenerateFresh(judgeResult, contextPacket, intentResult, referenceResult);
+    // regenerate is abolished — route to rewrite to avoid over-constraining the model.
+    return rewriteWithGuidance(draftResult, judgeResult, contextPacket, intentResult, referenceResult);
   }
 
   // Fallback — shouldn't be reached
@@ -145,6 +146,7 @@ async function rewriteWithGuidance(draftResult, judgeResult, contextPacket, inte
     const resp = await enqueueLLM(() => axios.post(`${ollamaUrl}/api/chat`, {
       model, stream: false, think: false,
       messages: [{ role: "user", content: prompt }],
+      options: { num_ctx: 4096, num_predict: 200 },
     }, { timeout: 45000 }), 1);
 
     const fixed = String(resp.data?.message?.content || "").trim();
@@ -192,6 +194,7 @@ async function regenerateFresh(judgeResult, contextPacket, intentResult, referen
         { role: "system", content: sysPrompt },
         { role: "user",   content: contextPacket.current_message.text },
       ],
+      options: { num_ctx: 4096, num_predict: 200 },
     }, { timeout: 45000 }), 1);
 
     const fixed = String(resp.data?.message?.content || "").trim();

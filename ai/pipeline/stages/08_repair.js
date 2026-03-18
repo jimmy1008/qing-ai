@@ -20,6 +20,7 @@ async function generateFallback(contextPacket) {
         { role: "system", content: "請用自然、簡短、口語中文回覆，不要自稱 AI。" },
         { role: "user", content: contextPacket.current_message.text },
       ],
+      options: { num_ctx: 2048, num_predict: 150 },
     }, { timeout: 30000 });
 
     const text = String(resp.data?.message?.content || "").trim();
@@ -83,11 +84,11 @@ async function run(event, ctx) {
     reply: ctx.finalText,
     chart: ctx.chartRequest || null,
     meta: {
-      intent: ctx.intentResult.intent,
+      intent: ctx.intentResult?.intent,
       routing_level: ctx.level,
-      judge_pass: ctx.judgeResult.pass,
-      judge_issues: ctx.judgeResult.issues,
-      judge_score: ctx.judgeResult.scores?.alignment,
+      judge_pass: ctx.judgeResult?.pass,
+      judge_issues: ctx.judgeResult?.issues,
+      judge_score: ctx.judgeResult?.scores?.alignment,
       repair_action: ctx.repairAction,
       memories_used: (ctx.selectedMemories || []).length,
       attempts: ctx.attempts,

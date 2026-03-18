@@ -218,7 +218,10 @@ router.get("/api/trading/review", async (req, res) => {
 
 // ── Strategy optimization hypothesis (LLM) ───────────────────────────────────
 router.get("/api/trading/hypothesis", async (_req, res) => {
-  const stats  = getStats();
+  const realStats = getStats();
+  const simStats  = getSimulatedStats();
+  // Prefer real stats; fall back to simulated stats if no real trades yet
+  const stats  = realStats.total > 0 ? realStats : simStats;
   const closed = getClosedTrades();
   if (closed.length < 5) return res.json({ hypothesis: "還需要更多交易資料（至少 5 筆完結）才能提出假設。" });
 

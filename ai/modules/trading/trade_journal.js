@@ -260,13 +260,16 @@ function getOpenSimulatedTrades() {
  */
 function getSimulatedStats() {
   const closed = getClosedTrades().filter(t => t.simulated === true);
-  if (closed.length === 0) return { total: 0, wins: 0, losses: 0, breakeven: 0, winRate: 0, avgRR: 0 };
+  if (closed.length === 0) return { total: 0, wins: 0, losses: 0, breakeven: 0, winRate: 0, avgRR: 0, byPair: {}, bySession: {}, byEntryType: {} };
   const wins      = closed.filter(t => t.result.outcome === "win").length;
   const losses    = closed.filter(t => t.result.outcome === "loss").length;
   const breakeven = closed.filter(t => t.result.outcome === "breakeven").length;
   const rrVals    = closed.map(t => t.result.rr_achieved).filter(r => r != null);
   const avgRR     = rrVals.length ? Number((rrVals.reduce((a,b)=>a+b,0)/rrVals.length).toFixed(2)) : 0;
-  return { total: closed.length, wins, losses, breakeven, winRate: Number(((wins/closed.length)*100).toFixed(1)), avgRR };
+  const byPair      = groupBy(closed, "pair",       t => outcomeStats(closed.filter(x => x.pair === t.pair)));
+  const bySession   = groupBy(closed, "session",    t => outcomeStats(closed.filter(x => x.session === t.session)));
+  const byEntryType = groupBy(closed, "entry_type", t => outcomeStats(closed.filter(x => x.entry_type === t.entry_type)));
+  return { total: closed.length, wins, losses, breakeven, winRate: Number(((wins/closed.length)*100).toFixed(1)), avgRR, byPair, bySession, byEntryType };
 }
 
 /**
