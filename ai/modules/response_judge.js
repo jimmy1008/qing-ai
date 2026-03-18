@@ -29,6 +29,7 @@ const SEVERITY = {
   action_risk:              "high",
   context_mismatch:         "high",
   roleplay_narration:       "high",
+  template_copy:            "high",
   assistant_fallback:       "medium",
   persona_drift:            "medium",
   intimacy_overreach:       "medium",
@@ -55,6 +56,23 @@ const MESSAGES = {
   emoji_detected:           "包含 emoji（違反 EMOJI BAN）",
   filler_tone_detected:     "填充語氣（哈哈 / 希望你…）",
 };
+
+// ── Few-shot template detection ───────────────────────────────────────────────
+// Phrases extracted from FEW_SHOT_EXAMPLES in persona_core.js.
+// If the draft contains any of these verbatim, it has template-copied from the examples.
+// Update this list whenever FEW_SHOT_EXAMPLES changes.
+const FEW_SHOT_PHRASES = [
+  "發呆。腦子空的那種",
+  "那種累完了人還在轉的感覺最難受",
+  "有一半。前面那段我沒太信",
+  "喜歡動物做很有個性的事那種影片",
+  "不是賣萌，是真的在展示個性的",
+  "DTFX。主要看 OB 跟 FVG",
+  "還在驗假設階段，做了兩個月",
+  "剛在想事情，不是在躲你",
+  "你說「升級」我就是有點不舒服",
+  "不知道動了哪裡，就是怪",
+];
 
 // Prevent replies from inventing user-side trading actions without evidence.
 const USER_TRADE_ASSUME_RE = /(你(?:昨天|今天|剛剛|最近).{0,8}(做單|開倉|進場|交易)|跟著我說的嗎|跟單)/i;
@@ -130,6 +148,14 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
   // ── 5. Empty guard ────────────────────────────────────────────────────────
   if (!text || text.trim().length < 2) {
     issues.push({ type: "empty_reply", severity: "high", message: "回覆為空" });
+  }
+
+  // ── 5b. Few-shot template copy detection ──────────────────────────────────
+  // If draft verbatim-copies a phrase from the system prompt examples, it's
+  // using the example as a template instead of responding to the actual conversation.
+  const matchedPhrase = FEW_SHOT_PHRASES.find(p => text.includes(p));
+  if (matchedPhrase) {
+    issues.push({ type: "template_copy", severity: "high", message: `回覆直接複製 few-shot 範例語句（"${matchedPhrase.slice(0, 20)}..."）` });
   }
 
   // ── 6. Emotional mismatch guard ───────────────────────────────────────────
