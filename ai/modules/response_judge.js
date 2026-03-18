@@ -34,7 +34,6 @@ const SEVERITY = {
   persona_drift:            "medium",
   intimacy_overreach:       "medium",
   neutral_ai_tone:          "medium",
-  trading_stale_phrase:     "medium",
   too_long:                 "low",
   poetic_tone:              "low",
   question_detected:        "low",
@@ -157,24 +156,6 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
   const matchedPhrase = FEW_SHOT_PHRASES.find(p => text.includes(p));
   if (matchedPhrase) {
     issues.push({ type: "template_copy", severity: "high", message: `回覆直接複製 few-shot 範例語句（"${matchedPhrase.slice(0, 20)}..."）` });
-  }
-
-  // ── 5c. Trading stale-phrase detection ────────────────────────────────────
-  // Phrases that have become reflexive go-to templates in market/position discussions.
-  // Detected in trading_research intent context only to avoid false positives.
-  const TRADING_STALE_PHRASES = [
-    "有點猶豫",
-    "就當娛樂",
-    "看看而已",
-    "不會開倉",
-    "卡在支撐",
-    "不確定是要",
-  ];
-  if (intentResult?.intent === "trading_research") {
-    const stalePhraseHit = TRADING_STALE_PHRASES.find(p => text.includes(p));
-    if (stalePhraseHit) {
-      issues.push({ type: "trading_stale_phrase", severity: "medium", message: `交易回覆出現慣用套話（"${stalePhraseHit}"），換個角度` });
-    }
   }
 
   // ── 6. Emotional mismatch guard ───────────────────────────────────────────
