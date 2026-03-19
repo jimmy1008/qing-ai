@@ -271,11 +271,16 @@ async function dispatchToAI(userId, username, inputText, msg, opts = {}) {
       extraMeta.newGroupTitle = msg.guild?.name || null;
     }
 
-    // Recent guild messages context (exclude current message)
+    // Recent guild messages context (exclude current message + bots)
     if (!isDM) {
-      const recent = (guildChannelRegistry.get(channelId)?.recentMessages || []).slice(0, -1).slice(-6);
+      const selfUsername = client?.user?.username;
+      const recent = (guildChannelRegistry.get(channelId)?.recentMessages || [])
+        .slice(0, -1)
+        .slice(-6)
+        .filter(m => m.username !== selfUsername);  // exclude own messages
       if (recent.length > 0)
-        extraMeta.groupRecentMessages = recent.map(m => `${m.username || "某人"}：${m.text}`).join("\n");
+        // Plain text only — no "Username：" prefix to prevent model learning that output format
+        extraMeta.groupRecentMessages = recent.map(m => m.text).join("\n");
     }
 
     // Long absence detection (private chat only, ≥3 days)

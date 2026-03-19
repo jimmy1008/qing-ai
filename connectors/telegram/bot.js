@@ -322,17 +322,21 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot, isSel
       event.meta.newGroupTitle = msg.chat?.title || null;
     }
 
-    // P2 ??inject recent group messages for context (exclude current sender's message)
+    // P2 ──inject recent group messages for context (exclude current sender + bots)
     if (channel === "group") {
       const { groupRegistry } = require("./active_chat_registry");
       const recentMsgs = groupRegistry?.get?.(chatId)?.recentMessages || [];
+      // Bot / anonymous-admin usernames: exclude to prevent format contamination in LLM output
+      const BOT_NAMES = new Set(["GroupAnonymousBot", "Channel_Bot", "Telegraph"]);
+      const botUsername = process.env.TG_BOT_USERNAME || "scalai_bot";
+      BOT_NAMES.add(botUsername);
       const others = recentMsgs
         .filter(m => String(m.userId) !== String(msg.from?.id))
+        .filter(m => !BOT_NAMES.has(m.username))
         .slice(-5);
       if (others.length > 0) {
-        event.meta.groupRecentMessages = others
-          .map(m => `${m.username || "某人"}：${m.text}`)
-          .join("\n");
+        // Plain text only — no "Username：" prefix to avoid model learning that output format
+        event.meta.groupRecentMessages = others.map(m => m.text).join("\n");
       }
     }
 

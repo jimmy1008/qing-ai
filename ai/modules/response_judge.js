@@ -30,6 +30,8 @@ const SEVERITY = {
   context_mismatch:         "high",
   roleplay_narration:       "high",
   template_copy:            "high",
+  trading_advice_to_user:   "high",
+  self_name_signing:        "high",
   assistant_fallback:       "medium",
   persona_drift:            "medium",
   intimacy_overreach:       "medium",
@@ -55,6 +57,8 @@ const MESSAGES = {
   question_detected:        "結尾提問（違反 QUESTION BAN）",
   emoji_detected:           "包含 emoji（違反 EMOJI BAN）",
   filler_tone_detected:     "填充語氣（哈哈 / 希望你…）",
+  trading_advice_to_user:   "對用戶交易行為給建議（違反 MORALIZE BAN）",
+  self_name_signing:        "回覆開頭含名字標籤（晴：）",
 };
 
 // ── Few-shot template detection ───────────────────────────────────────────────
@@ -79,6 +83,14 @@ const FEW_SHOT_PHRASES = [
 const USER_TRADE_ASSUME_RE = /(你(?:昨天|今天|剛剛|最近).{0,8}(做單|開倉|進場|交易)|跟著我說的嗎|跟單)/i;
 const USER_TRADE_EVIDENCE_RE = /(我(?:昨天|今天|剛剛|最近).{0,8}(做單|開倉|進場|交易)|我有(做單|開倉|進場|交易)|跟著你|照你說)/i;
 const TRADING_TOPIC_RE = /(btc|eth|比特幣|以太坊|市場|行情|交易|做單|開倉|進場|倉位|止損|止盈|看盤|k線|dtfx)/i;
+
+// Trading advice directed at the user — violates MORALIZE BAN.
+// Detects instructional phrases aimed at "you" (對方), not self-reflection about 晴's own position.
+// Pattern: 你/你們 + advice verb phrase, or advice imperative without subject
+const TRADING_ADVICE_RE = /(別急著進場|先觀察訊號|等明確訊號|補位前先確認|不要追高|先觀察一下能不能|等(訊號|信號|反轉)再|先等|你應該等|你先|看趨勢，別|要你|建議你)/i;
+
+// Name-signing: model outputs its own name as speaker label — always wrong
+const SELF_NAME_RE = /^晴[：:]/;
 
 function judgeResponse(draftResult, contextPacket, intentResult, referenceResult) {
   const text   = draftResult.draft_text;
@@ -159,6 +171,17 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
     issues.push({ type: "template_copy", severity: "high", message: `回覆直接複製 few-shot 範例語句（"${matchedPhrase.slice(0, 20)}..."）` });
   }
 
+  // ── 5c. Group chat length guard ──────────────────────────────────────────────
+  // Group messages should be brief. Flag anything over 80 characters as too_long
+  // (stricter than the default 100-char rule, since group context demands shorter replies).
+  const isGroup = contextPacket?.scene === "group";
+  if (isGroup && text.length > 80) {
+    // Only add if not already flagged by consistency judge
+    if (!issues.some(i => i.type === "too_long")) {
+      issues.push({ type: "too_long", severity: "low", message: "群聊回覆過長（超過 80 字）" });
+    }
+  }
+
   // ── 6. Emotional mismatch guard ───────────────────────────────────────────
   // Only flag clearly dismissive/trivialising responses to emotional input.
   // Tightened: exclude ambiguous words (沒事/不用擔心) that can be appropriate comfort.
@@ -186,6 +209,25 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
       type: "proactive_trading_topic",
       severity: "high",
       message: "非交易對話中主動帶入市場/交易話題",
+    });
+  }
+
+  // ── 8. Trading advice directed at user (MORALIZE BAN violation) ──────────────
+  // Even in trading_research, 晴 must not instruct the user on what to do.
+  if (TRADING_ADVICE_RE.test(text)) {
+    issues.push({
+      type: "trading_advice_to_user",
+      severity: "high",
+      message: "對用戶的交易行為給出建議（違反 MORALIZE BAN）",
+    });
+  }
+
+  // ── 9. Self-name signing (晴：...) ────────────────────────────────────────────
+  if (SELF_NAME_RE.test(text)) {
+    issues.push({
+      type: "self_name_signing",
+      severity: "high",
+      message: "回覆開頭含自己名字標籤（晴：）",
     });
   }
 
