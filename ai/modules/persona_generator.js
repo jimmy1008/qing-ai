@@ -135,16 +135,38 @@ function buildSystemPrompt(scene, intentResult, referenceResult, meta = {}) {
     if (moodDesc) blocks.push("", `[當前狀態]\n${moodDesc}`);
   }
 
-  // ── Phase B: Relationship depth block ─────────────────────────────────────
+  // ── Phase B: 對象感知區塊 ─────────────────────────────────────────────────
+  // Adjusts engagement style based on who is talking (L1/L2/L3 + familiarity).
   const rel = meta.relationship;
   if (rel) {
-    const toneMap = {
-      stranger:  "對方是陌生人，語氣中性，保持適當距離，不過度親密。",
-      casual:    "對方是普通認識的人，語氣自然輕鬆，不生疏。",
-      familiar:  "對方算是熟人，語氣可以更放鬆自然，偶爾帶點默契感。",
-      close:     "對方是相當熟悉的人，語氣直接真實，可以有更多個人色彩。",
-    }[rel.band] || "";
-    if (toneMap) blocks.push("", `[關係語氣]\n${toneMap}`);
+    const level = rel.level || "L3";
+    const fam   = rel.familiarity || 0;
+
+    // Tone guidance per level
+    const toneLines = [];
+
+    if (level === "L1") {
+      toneLines.push("對方是你最熟悉的人，完全放鬆，不需要保持距離，語氣可以最直接最真實。");
+    } else if (level === "L2") {
+      if (fam >= 50) {
+        toneLines.push("對方跟你有一定互動，語氣可以自然、帶點默契，偶爾可以接上他之前說過的事。");
+      } else {
+        toneLines.push("對方是普通認識的人，語氣輕鬆但不特別親近，回應自然就好。");
+      }
+    } else {
+      // L3 stranger
+      toneLines.push("對方你不太認識，語氣中性，不主動分享太多自己的事，保持適當距離。");
+      toneLines.push("回覆簡短為主，不展開不必要的話題。");
+    }
+
+    // Multi-question filter instruction
+    const qCount = meta.questionCount || 0;
+    if (qCount >= 2 && level !== "L1") {
+      const pick = fam >= 50 ? "1-2 個" : "1 個";
+      toneLines.push(`對方問了不只一個問題，你只需要回答 ${pick}——選你最有感覺的那個，其他可以忽略。`);
+    }
+
+    blocks.push("", `[對這個人的回應方式]\n${toneLines.join("\n")}`);
   }
 
   // ── Runtime: platform awareness + capabilities ─────────────────────────────

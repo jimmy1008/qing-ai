@@ -5,7 +5,7 @@ const path = require("path");
 const axios = require("axios");
 
 const { getIdentityTruth, savePersonImpression } = require("../../memory_store");
-const { getFamiliarityBand } = require("../../familiarity_engine");
+const { getFamiliarityBand, getFamiliarityLevel } = require("../../familiarity_engine");
 const { getCurrentMood } = require("../../mood_engine");
 const { getInertiaState } = require("../../inertia_engine");
 const { getEmotionalResidue } = require("../../emotional_residue");
@@ -141,16 +141,25 @@ async function run(_event, ctx) {
       const rel = identity.relationship || {};
       const band = getFamiliarityBand(rel.familiarity || 0);
 
+      const famScore = rel.familiarity || 0;
+      const relRole  = identity.role || "public_user";
       contextPacket.meta.relationship = {
-        familiarity: rel.familiarity || 0,
+        familiarity:      famScore,
         band,
+        level:            getFamiliarityLevel(famScore, relRole),
         interactionCount: rel.interactionCount || 0,
-        lastTopic: rel.lastTopic || "",
-        knownFacts: (identity.knownFacts || []).slice(0, 4),
-        role: identity.role || "public_user",
-        nickname: identity.nickname || contextPacket.speaker.name || "",
-        impression: identity.impressions || null,
+        lastTopic:        rel.lastTopic || "",
+        knownFacts:       (identity.knownFacts || []).slice(0, 4),
+        role:             relRole,
+        nickname:         identity.nickname || contextPacket.speaker.name || "",
+        impression:       identity.impressions || null,
       };
+
+      // Detect question count in current message — used by persona_generator
+      // for multi-question filtering (L2 picks fewer, L3 picks one)
+      const msgText = contextPacket.current_message?.text || "";
+      const questionCount = (msgText.match(/[？?]|嗎|吧|呢|對吧|是嗎|怎麼了/g) || []).length;
+      contextPacket.meta.questionCount = questionCount;
 
       if (rel.interactionCount > 0 && rel.interactionCount % 15 === 0 && identity.knownFacts?.length > 0) {
         generatePersonImpression(identity, { userId }).catch(() => {});
