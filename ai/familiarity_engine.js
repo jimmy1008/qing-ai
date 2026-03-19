@@ -34,8 +34,9 @@ function getFamiliarityBand(score) {
 
 function getFamiliarityLevel(score, role) {
   if (role === "developer") return "L1";
-  const band = getFamiliarityBand(score);
-  if (band === "stranger") return "L3";
+  // public_user can never be L1 regardless of score
+  const value = clampScore(score);
+  if (value <= 19) return "L3";
   return "L2";
 }
 

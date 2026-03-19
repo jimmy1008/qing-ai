@@ -135,8 +135,8 @@ function shouldDispatch(opts = {}) {
     return { pass: true, reason: "topic_match" };
   }
 
-  // 3. Long absence (>= 2 days) + active conversation (text length threshold)
-  if (_longAbsent(lastInteractionAt) && text.length >= 8) {
+  // 3. Long absence (>= 2 days) + non-trivial message
+  if (_longAbsent(lastInteractionAt) && text.length >= 4) {
     if (_onCooldown(groupId, "absence")) {
       return { pass: false, reason: "absence_cooldown" };
     }
