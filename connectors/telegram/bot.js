@@ -486,7 +486,12 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot, isSel
       sent = await bot.sendMessage(chatId, replyText, msgOpts);
     }
 
-    if (channel === "group") markGroupReplySent(event);
+    if (channel === "group") {
+      markGroupReplySent(event);
+      // Record this reply for topic continuation detection
+      const { recordBotReply } = require("../../ai/gate_layer");
+      recordBotReply(String(chatId), replyText);
+    }
 
     // ── Chart screenshot: send after text reply if requested ─────────────────
     if (result.chart) {

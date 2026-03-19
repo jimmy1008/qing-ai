@@ -371,6 +371,12 @@ async function dispatchToAI(userId, username, inputText, msg, opts = {}) {
     if (sentMsg?.id)
       _trackReply(sentMsg.id, { userId, replyText, userText: inputText });
 
+    // Record reply for topic continuation detection (group only)
+    if (!isDM) {
+      const { recordBotReply } = require("../../ai/gate_layer");
+      recordBotReply(String(channelId), replyText);
+    }
+
     // Ingest outgoing event into memory bus
     ingestEvent({
       platform:    "discord",
