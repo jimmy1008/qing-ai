@@ -171,17 +171,45 @@ function bufferMessage(chatId, inputText, msg, isDeveloper, isReplyToBot) {
 // memory only stores the user's actual words.
 const QUOTE_PREFIX_RE = /^\[(?:引用訊息[^\]]*|你之前說的：[^\]]*|使用者分享了[^\]]*)\]\n?/;
 
-// ?? DM reply lock ??????????????????????????????????????????????????????????????
-// Prevents overlapping AI dispatches for the same private chat.
-// If a second message arrives while the first is still processing,
-// it's queued and flushed as a combined turn after the current dispatch finishes.
+// ── Message-ID dedup ────────────────────────────────────────────────────────
+// Prevents processing the same Telegram message_id twice.
+// Happens after bot restarts: Telegram re-delivers pending updates.
+// Keep last 200 message IDs per chatId — enough to cover any burst.
+const _seenMessageIds = new Map(); // chatId → Set<message_id>
+function markSeen(chatId, messageId) {
+  if (!_seenMessageIds.has(chatId)) _seenMessageIds.set(chatId, new Set());
+  const s = _seenMessageIds.get(chatId);
+  s.add(messageId);
+  if (s.size > 200) s.delete(s.values().next().value);
+}
+function alreadySeen(chatId, messageId) {
+  return _seenMessageIds.get(chatId)?.has(messageId) ?? false;
+}
+
+// ── Dispatch lock (DM + group) ──────────────────────────────────────────────
+// DM: queue while processing, flush after.
+// Group: drop while processing (groups move fast; stale replies are worse than silence).
 const _dispatchingChats = new Set();
-const _pendingQueue     = new Map(); // chatId ??[{ combinedInput, msg, isDeveloper, isReplyToBot }]
+const _pendingQueue     = new Map(); // chatId → [{ combinedInput, msg, isDeveloper, isReplyToBot }]
 
 async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot, isSelfTopicJoin = false) {
   const chatId   = msg.chat?.id;
   const chatType = msg.chat?.type || "unknown";
   const channel  = chatType === "private" ? "private" : "group";
+
+  // Dedup: skip if we've already processed this exact message_id
+  const messageId = msg.message_id;
+  if (messageId && alreadySeen(chatId, messageId)) {
+    writeLog("dedup_skip", { chatId, messageId });
+    return;
+  }
+  if (messageId) markSeen(chatId, messageId);
+
+  // Group lock: drop if already processing this chat (groups move fast, stale replies are worse)
+  if (channel === "group" && _dispatchingChats.has(chatId)) {
+    writeLog("group_dispatch_drop", { chatId });
+    return;
+  }
 
   // DM lock: queue if already processing this chat
   if (channel === "private" && _dispatchingChats.has(chatId)) {
@@ -191,7 +219,7 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot, isSel
     writeLog("dm_queued", { chatId, queueLen: q.length });
     return;
   }
-  if (channel === "private") _dispatchingChats.add(chatId);
+  _dispatchingChats.add(chatId);
 
   // Clean version: strip quote prefix so memory stores only real user words
   const cleanInput = String(combinedInput || "").replace(QUOTE_PREFIX_RE, "").trim() || String(combinedInput || "");
@@ -510,9 +538,10 @@ async function dispatchToAI(combinedInput, msg, isDeveloper, isReplyToBot, isSel
     writeLog("send_error", { message: err.message, chatId, chatType, channel, userId: msg.from?.id || null });
     await bot.sendMessage(chatId, "抱歉，剛才出了點問題，你可以再試一次。", { reply_to_message_id: msg.message_id });
   } finally {
-    // Release DM lock and flush any queued messages as a combined turn
+    // Release lock
+    _dispatchingChats.delete(chatId);
+    // DM only: flush queued messages as a combined turn
     if (channel === "private") {
-      _dispatchingChats.delete(chatId);
       const queued = _pendingQueue.get(chatId);
       if (queued && queued.length > 0) {
         _pendingQueue.delete(chatId);
