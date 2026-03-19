@@ -20,6 +20,9 @@ const { maybeSamplePattern }       = require("../../ai/social_pattern_memory");
 const { maybeSampleExpressions }   = require("../../ai/modules/expression_learner");
 const { maybeSampleTopics }        = require("../../ai/modules/topic_interest");
 const { startConnectorHeartbeat }  = require("../../ai/connector_heartbeat_client");
+const { shouldDispatch }           = require("../../ai/gate_layer");
+const { getOrCreateCode }          = require("../../ai/user_code_registry");
+const { getIdentityTruth }         = require("../../ai/memory_store");
 
 const token = process.env.TG_TOKEN;
 const ollamaClient = createMultiModelClient(); // still used by proactive scheduler
@@ -716,23 +719,44 @@ bot.on("message", async (msg) => {
     username: msg.from?.username || null,
   });
 
-  // ?? Group gate: only dispatch if bot was directly @mentioned or replied to ??
-  // Non-@mention group messages are registered for context (proactive scheduler)
-  // but must NOT reach the pipeline ??prevents error messages leaking into group chats.
-  if (channel === "group" && !mentionDetectedEarly && !isCommand) {
-    // 例外：群組聊到「晴」本身時，主動加入對話（3 分鐘冷卻）
-    if (SELF_TOPIC_RE.test(inputText)) {
-      const lastSelfReply = _selfTopicCooldown.get(chatId) || 0;
-      if (Date.now() - lastSelfReply > SELF_TOPIC_COOLDOWN_MS) {
-        _selfTopicCooldown.set(chatId, Date.now());
-        writeLog("self_topic_dispatch", { chatId, chatType, userId: msg.from?.id || null, text: inputText.slice(0, 80) });
-        dispatchToAI(inputText, msg, isDeveloper, false, true).catch((err) => {
-          console.error("[bot] self_topic dispatch error:", err.message);
-        });
-        return;
-      }
+  // ── Group gate (gate_layer) ──────────────────────────────────────────────────
+  if (channel === "group" && !isCommand) {
+    // Assign / retrieve user code
+    const userRef  = `telegram:${msg.from?.id}`;
+    getOrCreateCode(userRef);
+
+    // Pull familiarity from memory
+    let familiarity = 0;
+    let lastInteractionAt = 0;
+    try {
+      const identity = getIdentityTruth(userRef);
+      familiarity       = identity.relationship.familiarity || 0;
+      lastInteractionAt = identity.relationship.lastInteractionAt || 0;
+    } catch {}
+
+    const isReplyToBot = !!(msg.reply_to_message?.from?.is_bot);
+    const gate = shouldDispatch({
+      text:             inputText,
+      isPrivate:        false,
+      isMention:        mentionDetectedEarly,
+      isCommand,
+      groupId:          String(chatId),
+      role:             isDeveloper ? "developer" : "public_user",
+      familiarity,
+      lastInteractionAt,
+      replyToBot:       isReplyToBot,
+    });
+
+    if (!gate.pass) {
+      writeLog("group_gate_skip", { chatId, reason: gate.reason, userId: msg.from?.id || null });
+      return;
     }
-    writeLog("group_nomention_skip", { chatId, chatType, userId: msg.from?.id || null });
+
+    const isSelfTopic = gate.reason === "name_mentioned";
+    writeLog("group_gate_pass", { chatId, reason: gate.reason, userId: msg.from?.id || null, text: inputText.slice(0, 60) });
+    dispatchToAI(inputText, msg, isDeveloper, false, isSelfTopic).catch((err) => {
+      console.error("[bot] gate_layer dispatch error:", err.message);
+    });
     return;
   }
 

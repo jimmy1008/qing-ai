@@ -212,4 +212,23 @@ function getTopicInterestHint(currentIntent) {
   }
 }
 
-module.exports = { maybeSampleTopics, getTopicInterestHint };
+/**
+ * getTopTopics(n) — returns top N topics with their TOPIC_MAP info and score.
+ * Used by gate_layer to check if incoming text matches an active interest.
+ */
+function getTopTopics(n = 3) {
+  try {
+    const data = _load();
+    const now  = Date.now();
+    const decayThresholdMs = DECAY_DAYS * 24 * 60 * 60 * 1000;
+    return Object.entries(data)
+      .filter(([, entry]) => entry && entry.score >= PRUNE_BELOW && now - entry.lastSeen <= decayThresholdMs)
+      .sort((a, b) => b[1].score - a[1].score)
+      .slice(0, n)
+      .map(([key, entry]) => ({ key, score: entry.score, info: TOPIC_MAP[key] || null }));
+  } catch {
+    return [];
+  }
+}
+
+module.exports = { maybeSampleTopics, getTopicInterestHint, getTopTopics };
