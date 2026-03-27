@@ -234,7 +234,12 @@
       <input id="tokenInput" type="password" placeholder="Team Token" style="background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:12px;width:130px" onchange="localStorage.setItem('teamToken',this.value.trim());loadAll()">
       <button class="btn sm" id="openDrawer">工具抽屜</button>
       <button class="btn sm primary" id="retryAll">全部刷新</button>
-      <button class="btn sm" onclick="location.href='/'">← 返回</button>
+      <button class="btn sm" onclick="location.href='/'">← 總覽</button>
+      <button class="btn sm" onclick="location.href='/threads-moderation'">Threads</button>
+      <button class="btn sm" onclick="location.href='/ai-cognition'">AI 認知</button>
+      <button class="btn sm" onclick="location.href='/relationships'">關係記憶</button>
+      <button class="btn sm" onclick="location.href='/emotion-log'">情緒日誌</button>
+      <button class="btn sm" onclick="location.href='/trading'">交易日誌</button>
     </div>
   </header>
 
@@ -668,6 +673,7 @@
   </div>
 </div>
 
+<script src="auth.js"></script>
 <script>
 const E = id => document.getElementById(id);
 const show = (id, v) => { const el = E(id); if (!el) return; el.textContent = (v === undefined || v === null || v === '') ? '—' : String(v); };
@@ -680,10 +686,7 @@ function setBadge(id, state) {
   el.className = `badge ${cls}`; el.textContent = label;
 }
 
-function getToken() {
-  const urlToken = new URLSearchParams(window.location.search).get('teamToken') || '';
-  return urlToken || localStorage.getItem('teamToken') || '';
-}
+// getToken provided by auth.js
 async function j(url, opts) {
   const r = await fetch(url, { cache:'no-store', ...opts, headers: { 'x-team-token': getToken(), ...(opts?.headers||{}) } });
   if (!r.ok) throw new Error(r.status);

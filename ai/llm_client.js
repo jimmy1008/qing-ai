@@ -19,12 +19,58 @@ const MAIN_TIMEOUT_MS = Number(process.env.LLM_MAIN_TIMEOUT_MS || TIMEOUT_MS);
 const FAST_TIMEOUT_MS = Number(process.env.LLM_FAST_TIMEOUT_MS || Math.min(TIMEOUT_MS, 30000));
 const LLM_KEEP_ALIVE = process.env.LLM_KEEP_ALIVE || "1h";
 
+// ── Fallback: OpenAI-compatible API (when Ollama is unreachable) ──────────────
+// Set OLLAMA_FALLBACK_URL and OLLAMA_FALLBACK_API_KEY in .env to enable.
+// e.g. OLLAMA_FALLBACK_URL=https://api.openai.com/v1
+//      OLLAMA_FALLBACK_API_KEY=sk-...
+//      OLLAMA_FALLBACK_MODEL=gpt-4o-mini
+const FALLBACK_URL   = process.env.OLLAMA_FALLBACK_URL   || "";
+const FALLBACK_KEY   = process.env.OLLAMA_FALLBACK_API_KEY || "";
+const FALLBACK_MODEL = process.env.OLLAMA_FALLBACK_MODEL || "gpt-4o-mini";
+
+function isOllamaDown(err) {
+  return err?.code === "ECONNREFUSED" || err?.code === "ECONNRESET" ||
+         err?.message?.includes("ECONNREFUSED") || err?.message?.includes("connect");
+}
+
+async function callFallback(system, prompt, timeoutMs = MAIN_TIMEOUT_MS) {
+  if (!FALLBACK_URL || !FALLBACK_KEY) return "";
+  try {
+    const resp = await axios.post(
+      `${FALLBACK_URL}/chat/completions`,
+      {
+        model: FALLBACK_MODEL,
+        messages: [
+          { role: "system", content: system },
+          { role: "user",   content: prompt  },
+        ],
+        temperature: 0.75,
+        max_tokens:  512,
+      },
+      {
+        timeout: timeoutMs,
+        headers: {
+          "Authorization": `Bearer ${FALLBACK_KEY}`,
+          "Content-Type":  "application/json",
+        },
+      }
+    );
+    const text = resp.data?.choices?.[0]?.message?.content || "";
+    console.warn("[LLM] used fallback provider:", FALLBACK_URL);
+    return String(text).trim();
+  } catch (fallbackErr) {
+    console.error("[LLM] fallback also failed:", fallbackErr.message);
+    return "";
+  }
+}
+
 // priority 1 = conversation (default), 3 = background tasks
-async function callOllama(model, body, timeoutMs = TIMEOUT_MS, priority = 1) {
+// modelId: alias ("main"|"fast"|"background") — routes to the correct per-model queue
+async function callOllama(model, body, timeoutMs = TIMEOUT_MS, priority = 1, modelId = "main") {
   const resp = await enqueueLLM(() => axios.post(ENDPOINT, body, {
     timeout: timeoutMs,
     headers: { "Content-Type": "application/json" },
-  }), priority);
+  }), priority, modelId);
   const raw = resp.data?.response || "";
   // Strip qwen3 thinking tags if they leak into the response
   return raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
@@ -59,6 +105,7 @@ function createMultiModelClient() {
           buildBody(MAIN_MODEL, system, prompt, options, false, keepAlive),
           timeoutMs,
           priority,
+          "main",
         );
         return String(raw).trim();
       } catch (err) {
@@ -66,6 +113,7 @@ function createMultiModelClient() {
           console.error("[LLM] main model timeout, returning empty");
           return "";
         }
+        if (isOllamaDown(err)) return callFallback(system, prompt, timeoutMs);
         throw err;
       }
     },
@@ -78,6 +126,7 @@ function createMultiModelClient() {
           buildBody(FAST_MODEL, system, prompt, { temperature: 0.5, top_p: 0.85, ...options }, false, keepAlive),
           timeoutMs,
           priority,
+          "fast",
         );
         return String(raw).trim();
       } catch (err) {
@@ -85,6 +134,7 @@ function createMultiModelClient() {
           console.error("[LLM] fast model timeout, returning empty");
           return "";
         }
+        if (isOllamaDown(err)) return callFallback(system, prompt, timeoutMs);
         throw err;
       }
     },
@@ -96,7 +146,7 @@ function createMultiModelClient() {
         ENDPOINT,
         buildBody(MAIN_MODEL, system, prompt, options, true, keepAlive),
         { responseType: "stream", timeout: timeoutMs },
-      ), 1);
+      ), 1, "main");
 
       let pending = "";
       for await (const chunk of resp.data) {

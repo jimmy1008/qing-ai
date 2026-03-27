@@ -28,7 +28,7 @@ const { requireAuth } = require("../auth/auth_middleware");
 const { DTFX_CORE, validateSetup } = require("../ai/modules/trading/dtfx_core");
 const {
   logTrade, updateTrade, getRecentTrades, getTrade, getClosedTrades, getStats,
-  getOpenSimulatedTrades, getSimulatedStats,
+  getOpenSimulatedTrades, getSimulatedStats, clearSimulatedTrades,
 } = require("../ai/modules/trading/trade_journal");
 const {
   reflectOnTrade, periodicReview, generateHypothesis, analyzeSetup,
@@ -40,6 +40,7 @@ const {
   getSchedulerStatus, getActiveSetups, getNewsStatus,
 } = require("../ai/modules/trading/trading_scheduler");
 const { getCalendarSummary, getUpcomingEvents } = require("../ai/modules/trading/news_calendar");
+const { fetchCandles } = require("../ai/modules/trading/tv_datafeed");
 
 const router = express.Router();
 
@@ -160,6 +161,26 @@ router.get("/api/trading/simulated", (_req, res) => {
   res.json({ simulated: getOpenSimulatedTrades() });
 });
 
+// 清除所有模擬交易記錄（保留真實交易）
+router.delete("/api/trading/simulated/all", requireAuth, (req, res) => {
+  const removed = clearSimulatedTrades();
+  res.json({ ok: true, removed });
+});
+
+// ── Raw OHLCV candles for chart display ───────────────────────────────────────
+// ?tf=1H (default) | 4H | 15M | 5M   ?bars=150 (default, max 300)
+router.get("/api/trading/candles/:asset", requireAuth, async (req, res) => {
+  const asset = req.params.asset.toUpperCase();
+  const tf    = ["4H","1H","15M","5M"].includes(req.query.tf) ? req.query.tf : "1H";
+  const bars  = Math.min(Number(req.query.bars) || 150, 300);
+  try {
+    const candles = await fetchCandles(asset, tf, bars);
+    res.json({ asset, tf, bars: candles.length, candles });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── DTFX Core reference ───────────────────────────────────────────────────────
 router.get("/api/trading/core", (_req, res) => {
   res.json(DTFX_CORE);
@@ -197,7 +218,10 @@ router.get("/api/trading/review", async (req, res) => {
 
 // ── Strategy optimization hypothesis (LLM) ───────────────────────────────────
 router.get("/api/trading/hypothesis", async (_req, res) => {
-  const stats  = getStats();
+  const realStats = getStats();
+  const simStats  = getSimulatedStats();
+  // Prefer real stats; fall back to simulated stats if no real trades yet
+  const stats  = realStats.total > 0 ? realStats : simStats;
   const closed = getClosedTrades();
   if (closed.length < 5) return res.json({ hypothesis: "還需要更多交易資料（至少 5 筆完結）才能提出假設。" });
 
@@ -217,6 +241,9 @@ router.post("/api/trading/analyze", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "必填：pair, direction" });
   }
   const validation = validateSetup(setup);
+  if (!validation.valid) {
+    return res.status(400).json({ error: validation.issues?.join("; ") || "setup 驗證失敗", validation });
+  }
 
   try {
     const analysis  = await analyzeSetup(setup);

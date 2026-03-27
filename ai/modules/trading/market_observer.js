@@ -16,11 +16,14 @@ const axios    = require("axios");
 const fs       = require("fs");
 const path     = require("path");
 const { enqueueLLM } = require("../../llm_queue");
-const { fetchSnapshot, fetchMultiTF, fetchFundingOI } = require("./tv_datafeed");
+const { fetchSnapshot, fetchMultiTF, fetchFundingOI, computeKDJ } = require("./tv_datafeed");
 const { analyzeMultiTF }                 = require("./dtfx_analyzer");
 
-const OLLAMA_URL = () => process.env.OLLAMA_URL || "http://localhost:11434";
-const LLM_MODEL  = () => process.env.LLM_MODEL  || "qwen3:8b";
+const OLLAMA_URL  = () => process.env.OLLAMA_URL       || "http://localhost:11434";
+const LLM_MODEL   = () => process.env.LLM_MODEL        || "qwen3:8b";
+// Background market narrative uses fast model — no need for main model depth,
+// and avoids starving conversation queue with slow background jobs.
+const FAST_MODEL  = () => process.env.LLM_FAST_MODEL   || "qwen2.5:3b";
 
 // ── Observation cache — persisted to disk ─────────────────────────────────────
 const OBS_FILE = path.join(__dirname, "../../../memory/trades/observations.json");
@@ -72,8 +75,11 @@ async function observe(asset, opts = {}) {
   // ── Step 2: DTFX analysis ───────────────────────────────────────────────
   const analysis = analyzeMultiTF(multiTF.data || {});
 
+  // ── Step 2b: KDJ from 1H candles (reference indicator only) ────────────
+  const kdj1h = computeKDJ(multiTF.data?.["1H"] || []);
+
   // ── Step 3: Build structured observation report ─────────────────────────
-  const report = buildReport(A, snapshot, analysis, multiTF.errors || {}, fundingOI);
+  const report = buildReport(A, snapshot, analysis, multiTF.errors || {}, fundingOI, kdj1h);
 
   // ── Step 4: LLM trade idea narrative ────────────────────────────────────
   if (!opts.noLLM) {
@@ -108,7 +114,7 @@ function getObservations(asset, n = 10) {
 
 // ── Build report ──────────────────────────────────────────────────────────────
 
-function buildReport(asset, snapshot, analysis, dataErrors, fundingOI) {
+function buildReport(asset, snapshot, analysis, dataErrors, fundingOI, kdj) {
   const conf = analysis.confluence || {};
   const h4   = analysis.timeframes?.["4H"] || {};
   const h1   = analysis.timeframes?.["1H"] || {};
@@ -121,7 +127,7 @@ function buildReport(asset, snapshot, analysis, dataErrors, fundingOI) {
     low:         snapshot.low   ?? snapshot.price,
     change_pct:  snapshot.change_pct,
     volume:      snapshot.volume,
-    indicators:  snapshot.indicators,
+    indicators:  { ...snapshot.indicators, kdj: kdj || null },
     observed_at: Date.now(),
 
     // Multi-TF structure summary
@@ -180,16 +186,18 @@ async function generateTradeIdea(report) {
 
   // Summarize key levels for prompt
   const obList = (report.key_levels.order_blocks || [])
+    .filter(ob => ob.bottom != null && ob.top != null)
     .map(ob => `  · ${ob.type} ${ob.bottom}–${ob.top}`)
     .join("\n") || "  （無明確 OB）";
 
   const fvgList = (report.key_levels.fvgs || [])
+    .filter(fvg => fvg.bottom != null && fvg.top != null)
     .map(fvg => `  · ${fvg.type} ${fvg.bottom}–${fvg.top}`)
     .join("\n") || "  （無未填 FVG）";
 
   const liq = report.key_levels.liquidity;
-  const bslLevels = (liq?.bsl || []).map(l => l.level).join(", ") || "—";
-  const sslLevels = (liq?.ssl || []).map(l => l.level).join(", ") || "—";
+  const bslLevels = (liq?.bsl || []).map(l => l.level).filter(v => v != null).join(", ") || "—";
+  const sslLevels = (liq?.ssl || []).map(l => l.level).filter(v => v != null).join(", ") || "—";
 
   const h4Trend  = report.structure["4H"]?.trend  || "?";
   const h1Trend  = report.structure["1H"]?.trend  || "?";
@@ -200,19 +208,26 @@ async function generateTradeIdea(report) {
   const setupWarnings = (report.setup?.warnings || []).join("; ") || "無";
 
   const rsi  = report.indicators?.rsi;
+  const kdj  = report.indicators?.kdj;
   const vol  = report.volume ? formatVolume(report.volume) : "N/A";
   const fundingRate  = report.auxiliary?.funding_rate;
   const openInterest = report.auxiliary?.open_interest;
+
+  const kdjStr = kdj
+    ? `K:${kdj.k} D:${kdj.d} J:${kdj.j}（參考用，不作開倉標準）`
+    : "N/A";
 
   const prompt = [
     "你是晴，一個正在學習 DTFX 策略的 AI 交易研究員。用第一人稱口語中文，約 5–8 句。",
     "根據市場分析，說出你現在看到什麼，以及你有沒有交易想法。",
     "不要預測漲跌，不要給確定性的結論，語氣像在思考中。",
     "如果有交易想法，說出你會觀察什麼再進場，不要直接給入場價（除非結構非常清晰）。",
+    "注意：開倉判斷以 DTFX 結構評分為主，RSI/KDJ 只是輔助參考。",
     "",
     `【市場現況】`,
     `${report.asset}/USDT  當前價格：${price}  24H 變化：${change}%  成交量：${vol}`,
-    `RSI：${rsi ?? "N/A"}  資金費率：${fundingRate != null ? fundingRate + "%" : "N/A"}  OI：${openInterest ?? "N/A"}`,
+    `RSI：${rsi ?? "N/A"}  KDJ(1H)：${kdjStr}`,
+    `資金費率：${fundingRate != null ? fundingRate + "%" : "N/A"}  OI：${openInterest ?? "N/A"}`,
     "",
     `【多時間框架結構】`,
     `4H：${h4Trend}  |  1H：${h1Trend}  |  15M：${m15Trend}`,
@@ -233,11 +248,11 @@ async function generateTradeIdea(report) {
   try {
     // priority 3 — background; conversation calls (priority 1) go first
     const resp = await enqueueLLM(() => axios.post(`${OLLAMA_URL()}/api/chat`, {
-      model:  LLM_MODEL(),
+      model:  FAST_MODEL(),
       stream: false,
       think:  false,
       messages: [{ role: "user", content: prompt }],
-    }, { timeout: 60000 }), 3, "background");
+    }, { timeout: 45000 }), 3, "background");
     return String(resp.data?.message?.content || "").trim() || "（市場分析暫無內容）";
   } catch (err) {
     console.warn("[market_observer] LLM trade idea failed:", err.message);

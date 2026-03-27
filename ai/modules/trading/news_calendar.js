@@ -111,8 +111,9 @@ async function getCalendarSummary() {
     events:      relevant,
     fetched_at:  _cacheTime || null,
     has_high_risk: relevant.some(ev => {
+      if (!ev.time) return false;
       const t = new Date(ev.time).getTime();
-      return Math.abs(Date.now() - t) < 4 * 60 * 60 * 1000; // 4小時內
+      return !isNaN(t) && Math.abs(Date.now() - t) < 4 * 60 * 60 * 1000; // 4小時內
     }),
   };
 }

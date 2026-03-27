@@ -54,20 +54,7 @@ async function ensureAuth() {
   return { token, role: data.role };
 }
 
-async function authFetch(url, options = {}) {
-  const token = localStorage.getItem("teamToken");
-  const headers = {
-    ...(options.headers || {}),
-    "x-team-token": token || "",
-  };
-  const res = await fetch(url, { ...options, headers });
-
-  if (res.status === 403) {
-    throw new Error("forbidden");
-  }
-
-  return res;
-}
+// authFetch is provided by auth.js (loaded before this script)
 
 function hideElement(id) {
   const el = document.getElementById(id);
@@ -142,6 +129,15 @@ function translateLabel(label) {
 
 function statusText(ok) {
   return ok ? "通過" : "失敗";
+}
+
+function formatUptime(sec) {
+  const s = Math.floor(sec || 0);
+  if (s < 60) return `${s} 秒`;
+  if (s < 3600) return `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}h ${m}m`;
 }
 
 function updateChart(history) {
@@ -481,7 +477,7 @@ async function loadMetrics() {
   trustCheck.className = trustPass ? "value small success" : "value small danger";
 
   document.getElementById("systemTime").innerText = `系統時間：${data.system?.timestamp || "--"}`;
-  document.getElementById("uptime").innerText = `運行時間：${data.system?.uptime_sec || 0}s`;
+  document.getElementById("uptime").innerText = `運行時間：${formatUptime(data.system?.uptime_sec)}`;
   document.getElementById("lastUpdated").innerText = `最後更新：${new Date().toLocaleTimeString("zh-TW", { hour12: false })}`;
 
   renderAlerts(data.alerts || [], healthScore);
@@ -490,18 +486,24 @@ async function loadMetrics() {
 
 async function loadLog() {
   if (authRole !== "superadmin") return;
-  const res = await authFetch("/api/log");
-  const text = await res.text();
-  rawRealtimeLogs = parseJsonLines(text);
-  renderLogs();
+  try {
+    const res = await authFetch("/api/log");
+    if (!res.ok) throw new Error(res.status);
+    const text = await res.text();
+    rawRealtimeLogs = parseJsonLines(text);
+    renderLogs();
+  } catch { /* non-blocking */ }
 }
 
 async function loadActionLog() {
   if (authRole !== "superadmin") return;
-  const res = await authFetch("/api/action-log");
-  const text = await res.text();
-  rawActionLogs = parseJsonLines(text);
-  renderLogs();
+  try {
+    const res = await authFetch("/api/action-log");
+    if (!res.ok) throw new Error(res.status);
+    const text = await res.text();
+    rawActionLogs = parseJsonLines(text);
+    renderLogs();
+  } catch { /* non-blocking */ }
 }
 
 function formatRelativeTime(ts) {
@@ -584,23 +586,27 @@ function toggleAutoScroll() {
   document.getElementById("autoScrollButton").innerText = `自動滾動：${autoScroll ? "開" : "關"}`;
 }
 
+function runAllLoaders() {
+  return Promise.all([
+    loadMetrics().catch(() => {}),
+    loadLog().catch(() => {}),
+    loadActionLog().catch(() => {}),
+    loadThreadsActivity().catch(() => {}),
+    loadThreadsImpressions().catch(() => {}),
+  ]);
+}
+
 function setRefresh(rate) {
   if (intervalId) clearInterval(intervalId);
-  intervalId = setInterval(() => {
-    loadMetrics();
-    loadLog();
-    loadActionLog();
-    loadThreadsActivity();
-    loadThreadsImpressions();
-  }, rate);
+  intervalId = setInterval(() => { runAllLoaders(); }, rate);
 }
 
 function manualRefresh() {
-  loadMetrics();
-  loadLog();
-  loadActionLog();
-  loadThreadsActivity();
-  loadThreadsImpressions();
+  const btn = document.querySelector('.topbar-nav .btn[onclick="manualRefresh()"]');
+  if (btn) { btn.textContent = '刷新中…'; btn.disabled = true; }
+  runAllLoaders().finally(() => {
+    if (btn) { btn.textContent = '刷新'; btn.disabled = false; }
+  });
 }
 
 document.getElementById("refreshRate").addEventListener("change", (event) => {
@@ -611,7 +617,7 @@ async function bootstrap() {
   try {
     const auth = await ensureAuth();
     applyRoleUI(auth.role);
-    setRefresh(3000);
+    setRefresh(10000);
     await loadMetrics();
     await loadLog();
     await loadActionLog();

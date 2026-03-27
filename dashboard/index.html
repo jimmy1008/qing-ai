@@ -26,14 +26,13 @@
       <button class="btn" type="button" onclick="location.href='/lora-dashboard.html'">LoRA 訓練</button>
       <button class="btn" type="button" onclick="location.href='/relationships'">關係記憶</button>
       <button class="btn" type="button" onclick="location.href='/emotion-log'">情緒日誌</button>
-      <button class="btn" type="button" onclick="location.href='/voice-chat'">語音對話</button>
-      <button class="btn" type="button" onclick="location.href='/trading'">交易日誌</button>
+<button class="btn" type="button" onclick="location.href='/trading'">交易日誌</button>
       <div class="nav-sep"></div>
       <button class="btn" type="button" onclick="manualRefresh()">刷新</button>
       <select id="refreshRate" aria-label="更新頻率">
-        <option value="3000" selected>3 秒</option>
         <option value="5000">5 秒</option>
-        <option value="10000">10 秒</option>
+        <option value="10000" selected>10 秒</option>
+        <option value="30000">30 秒</option>
       </select>
     </nav>
   </header>
@@ -44,12 +43,12 @@
         <section class="panel compact-panel">
           <div class="panel-title">系統核心狀態</div>
           <div class="summary-line">
-            <span id="connectorStatus" class="summary-chip success">● 在線</span>
-            <span id="incomingRate" class="summary-chip">0 次/分</span>
-            <span id="errorRate" class="summary-chip">錯誤：0</span>
-            <span id="healthScore" class="summary-chip">健康：100</span>
+            <span id="connectorStatus" class="summary-chip">● 載入中</span>
+            <span id="incomingRate" class="summary-chip">--</span>
+            <span id="errorRate" class="summary-chip">--</span>
+            <span id="healthScore" class="summary-chip">--</span>
           </div>
-          <div id="alertsBox" class="alert-box compact">目前沒有警示。</div>
+          <div id="alertsBox" class="alert-box compact">載入中…</div>
         </section>
 
         <section class="panel compact-panel">
@@ -223,8 +222,68 @@
         </section>
       </div>
     </section>
+
+    <!-- Error log panel (always visible in dashboard view) -->
+    <section id="errorLogPanel" class="panel" style="margin-top:12px;border-color:rgba(255,255,255,0.06);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="panel-title" style="margin-bottom:0;">系統錯誤紀錄</div>
+          <span id="errorBadge" style="display:none;background:#ef4444;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;"></span>
+        </div>
+        <button class="btn" type="button" onclick="clearErrorLog()" style="font-size:12px;padding:4px 12px;">清除</button>
+      </div>
+      <div id="errorLogList"></div>
+    </section>
+
   </main>
 
+  <script src="auth.js"></script>
   <script src="app.js"></script>
+  <script>
+    // ── Error log panel ───────────────────────────────────────────────────────
+    const errPanel = document.getElementById('errorLogPanel');
+    const errList  = document.getElementById('errorLogList');
+    const errBadge = document.getElementById('errorBadge');
+    let _errCount = 0;
+
+    async function fetchErrors() {
+      try {
+        const data = await authFetch('/api/system/errors').then(r => r.json());
+        if (!Array.isArray(data) || data.length === 0) {
+          errList.innerHTML = '<div style="color:#6b7280;font-size:12px;padding:6px 0;">目前無錯誤紀錄</div>';
+          errBadge.style.display = 'none';
+          return;
+        }
+        if (data.length !== _errCount) {
+          _errCount = data.length;
+          errBadge.textContent = data.length;
+          errBadge.style.display = 'inline-block';
+          errPanel.style.borderColor = 'rgba(248,113,113,0.4)';
+        }
+        errList.innerHTML = data.slice(0, 10).map(e => {
+          const t = new Date(e.ts).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+          return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #1e2a36;font-size:12px;">
+            <span style="color:#6b7280;white-space:nowrap;">${t}</span>
+            <span style="color:#f87171;white-space:nowrap;">[${e.type}]</span>
+            <span style="color:#c9d4e0;word-break:break-all;">${e.message}</span>
+          </div>`;
+        }).join('');
+      } catch {
+        errList.innerHTML = '<div style="color:#f87171;font-size:12px;padding:6px 0;">錯誤紀錄載入失敗</div>';
+      }
+    }
+
+    fetchErrors();
+    setInterval(fetchErrors, 15000);
+
+    function clearErrorLog() {
+      authFetch('/api/system/errors/clear', { method: 'POST' }).then(() => {
+        errList.innerHTML = '<div style="color:#6b7280;font-size:12px;padding:6px 0;">目前無錯誤紀錄</div>';
+        errBadge.style.display = 'none';
+        errPanel.style.borderColor = '';
+        _errCount = 0;
+      }).catch(() => {});
+    }
+  </script>
 </body>
 </html>

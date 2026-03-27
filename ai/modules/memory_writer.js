@@ -57,10 +57,11 @@ async function maybeWriteMemory(contextPacket, intentResult, finalReply) {
     if (scene === "group" && GROUP_BLOCKED_TYPES.has(detected.event_type)) return;
 
     await storeEpisode(globalUserKey, {
-      event_type: detected.event_type,
-      summary:    detected.summary,
-      importance: detected.importance,
-      embedding:  null,   // embedding is computed lazily by memory_retriever if needed
+      event_type:    detected.event_type,
+      summary:       detected.summary,
+      importance:    detected.importance,
+      emotional_tag: detected.emotional_tag || null,
+      embedding:     null,   // embedding is computed lazily by memory_retriever if needed
     });
   } catch {
     // Intentionally silent — memory write failure must never break the main reply

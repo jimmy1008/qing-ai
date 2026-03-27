@@ -2,7 +2,7 @@
  * behavior_policy.js — Phase 2 Self-Awareness → Behavior Policy
  *
  * Maps selfAwarenessState to a concrete behavior strategy.
- * Consumed by pipeline.js after evaluateSelfAwarenessState().
+ * Consumed by orchestrator/pipeline stages after evaluateSelfAwarenessState().
  *
  * Policy shape:
  *   allowActionPlanner: boolean  — whether action_planner runs

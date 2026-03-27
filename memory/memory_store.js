@@ -7,7 +7,26 @@ const {
 
 const MAX_SHORT_TERM = 20;
 const MAX_LONG_TERM = 50;
+const MAX_IN_MEMORY = 100; // LRU cap: max users kept in RAM at once
 const memoryMap = load();
+const _lruOrder = []; // tracks access order for eviction (oldest first)
+
+function _lruTouch(key) {
+  const i = _lruOrder.indexOf(key);
+  if (i !== -1) _lruOrder.splice(i, 1);
+  _lruOrder.push(key);
+}
+
+function _lruEvictIfNeeded() {
+  while (memoryMap.size > MAX_IN_MEMORY && _lruOrder.length > 0) {
+    const evict = _lruOrder.shift();
+    const data = memoryMap.get(evict);
+    if (data) {
+      try { saveKey(evict, data); } catch {}
+    }
+    memoryMap.delete(evict);
+  }
+}
 
 function createEmptyMemory() {
   return {
@@ -54,6 +73,10 @@ function createEmptyMemory() {
       avoid: {},
       lastUpdatedAt: null,
       evidence: [],
+    },
+    impressions: {
+      text:       null,   // 晴對這個人的主觀印象（自然語言，繁體中文）
+      updated_at: null,
     },
   };
 }
@@ -114,11 +137,12 @@ function normalizeMemory(memory) {
 
 function getMemory(key) {
   if (!memoryMap.has(key)) {
-    // Try to load from disk first (lazy load for keys not in startup map)
     const fromDisk = loadKey(key);
     memoryMap.set(key, fromDisk || createEmptyMemory());
     if (!fromDisk) saveKey(key, memoryMap.get(key));
+    _lruEvictIfNeeded();
   }
+  _lruTouch(key);
   const memory = memoryMap.get(key);
   normalizeMemory(memory);
   return memory;

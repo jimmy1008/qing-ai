@@ -33,13 +33,7 @@ async function ensureAuth() {
   if (me.role !== "superadmin") throw new Error("forbidden");
 }
 
-async function authFetch(url, options = {}) {
-  const token = localStorage.getItem("teamToken") || "";
-  return fetch(url, {
-    ...options,
-    headers: { ...(options.headers || {}), "x-team-token": token },
-  });
-}
+// authFetch is provided by auth.js (loaded before this script)
 
 function escapeHtml(text) {
   return String(text || "")

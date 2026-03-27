@@ -354,7 +354,8 @@ function findLiquidityLevels(candles, p) {
 function clusterLevels(prices, tol) {
   const clusters = [];
   for (const p of prices) {
-    const existing = clusters.find(c => Math.abs(c - p) / p < tol);
+    if (!p) continue; // skip zero/null to avoid division-by-zero
+    const existing = clusters.find(c => c !== 0 && Math.abs(c - p) / p < tol);
     if (!existing) clusters.push(p);
   }
   return clusters;
@@ -466,17 +467,37 @@ function buildConfluence(results) {
     trends[tf] = r.structure?.trend;
   }
 
-  // Count direction confluence
-  const biasArr = Object.values(biases).filter(Boolean);
-  const longCount  = biasArr.filter(b => b === "long").length;
-  const shortCount = biasArr.filter(b => b === "short").length;
-  const totalBias  = biasArr.length;
+  // Weighted direction confluence (higher TF = more weight)
+  const biasWeights = { "4H": 3, "1H": 2, "15M": 1, "5M": 0.5 };
+  let longWeight = 0, shortWeight = 0, totalBiasWeight = 0;
+  for (const tf of tfs) {
+    const b = biases[tf];
+    const w = biasWeights[tf] || 1;
+    if (b === "long")  { longWeight  += w; totalBiasWeight += w; }
+    else if (b === "short") { shortWeight += w; totalBiasWeight += w; }
+    else if (b === "neutral") { totalBiasWeight += w; }
+  }
 
   let overallBias = "neutral";
-  if (longCount / totalBias >= 0.75) overallBias = "strong_long";
-  else if (shortCount / totalBias >= 0.75) overallBias = "strong_short";
-  else if (longCount > shortCount) overallBias = "lean_long";
-  else if (shortCount > longCount) overallBias = "lean_short";
+  if (totalBiasWeight > 0) {
+    if (longWeight / totalBiasWeight >= 0.75) overallBias = "strong_long";
+    else if (shortWeight / totalBiasWeight >= 0.75) overallBias = "strong_short";
+    else if (longWeight > shortWeight) overallBias = "lean_long";
+    else if (shortWeight > longWeight) overallBias = "lean_short";
+  }
+
+  // Fallback: if all per-TF biases are neutral (no BOS/CHoCH events at all), use structure trends
+  if (overallBias === "neutral") {
+    let longTrend = 0, shortTrend = 0;
+    for (const tf of tfs) {
+      const t = trends[tf];
+      const w = biasWeights[tf] || 1;
+      if (t === "bullish" || t === "accumulation") longTrend  += w;
+      else if (t === "bearish" || t === "distribution") shortTrend += w;
+    }
+    if (longTrend > shortTrend) overallBias = "lean_long";
+    else if (shortTrend > longTrend) overallBias = "lean_short";
+  }
 
   // Average setup score weighted (higher TF = more weight)
   const weights = { "4H": 3, "1H": 2, "15M": 1, "5M": 0.5 };
@@ -489,8 +510,9 @@ function buildConfluence(results) {
   }
   const avgScore = totalWeight ? Math.round(weightedScore / totalWeight) : 0;
 
-  // Overall grade for best entry timeframe
-  const bestEntryTF = ["15M", "5M"].find(tf => scores[tf] >= 50) || null;
+  // Best entry TF: prefer lower TFs for precision, but accept any TF ≥ 50
+  const TF_PRIORITY = ["15M", "5M", "1H", "4H"];
+  const bestEntryTF = TF_PRIORITY.find(tf => (scores[tf] ?? 0) >= 50) || null;
 
   return {
     overall_bias:    overallBias,

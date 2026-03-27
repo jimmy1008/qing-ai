@@ -9,6 +9,10 @@ const { enqueueModeration } = require("../../ai/moderation_queue");
 const { saveInterestingPost } = require("../../ai/interesting_posts_cache");
 const { recordObservation } = require("../../ai/browsing_observations");
 const { addTopic } = require("../../ai/topic_pool");
+const {
+  evaluateThreadsPost,
+  generateThreadsProactiveComment,
+} = require("../../ai/threads_engagement_llm");
 
 const LIKED_IDS_PATH = path.join(__dirname, "../../telemetry/liked_post_ids.json");
 const MAX_LIKED_IDS = 500;
@@ -49,37 +53,18 @@ const THREADS_SESSION_DURATION_LIMIT = 15 * 60 * 1000;
 const ADULT_PATTERN = /(?:\u6210\u4eba|\u8272\u60c5|\u88f8|\u88f8\u9732|\u9732\u9ede|\u6027\u611b|\u6027\u4ea4|\u7d04\u70ae|porn|nsfw|onlyfans|fetish)/i;
 const SEXUAL_TONE_PATTERN = /(?:\u81ea\u6170|\u9ad8\u6f6e|\u6027\u6697\u793a|sexy|horny|nude|sexual)/i;
 const POLITICAL_DEBATE_PATTERN = /(?:\u653f\u6cbb|\u9078\u8209|\u5019\u9078\u4eba|\u653f\u9ee8|\u85cd\u7da0|\u7acb\u5834|\u722d\u8ad6|\u8fef\u8ad6|politic|election|debate|campaign)/i;
-let pipelineApi = null;
-let ollamaClient = null;
-
-function getPipelineApi() {
-  if (!pipelineApi) {
-    pipelineApi = require("../../ai/pipeline");
-  }
-  return pipelineApi;
-}
-
 async function generateComment(postText, authorUsername) {
   try {
-    const { generateThreadsProactiveComment } = getPipelineApi();
     const impression = getImpression(authorUsername);
     return await generateThreadsProactiveComment(postText, {
       authorUsername,
       likeCount: impression.likeCount || 0,
       impression: impression.impression || "neutral",
       recentEmotions: impression.recentEmotions || [],
-    }, getOllamaClient());
+    });
   } catch {
     return null;
   }
-}
-
-function getOllamaClient() {
-  if (!ollamaClient) {
-    const { createOllamaClient } = getPipelineApi();
-    ollamaClient = createOllamaClient();
-  }
-  return ollamaClient;
 }
 
 function randomBetween(min, max) {
@@ -128,8 +113,7 @@ async function humanLikeScroll(page) {
 
 async function aiEvaluate(text) {
   try {
-    const { evaluateThreadsPost } = getPipelineApi();
-    return await evaluateThreadsPost(text, getOllamaClient());
+    return await evaluateThreadsPost(text);
   } catch {
     // Fallback to keyword scoring when Ollama is unavailable
     const score = evaluateLikeScore(text);

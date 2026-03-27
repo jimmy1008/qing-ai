@@ -29,6 +29,9 @@ const SEVERITY = {
   action_risk:              "high",
   context_mismatch:         "high",
   roleplay_narration:       "high",
+  template_copy:            "high",
+  trading_advice_to_user:   "high",
+  self_name_signing:        "high",
   assistant_fallback:       "medium",
   persona_drift:            "medium",
   intimacy_overreach:       "medium",
@@ -54,10 +57,44 @@ const MESSAGES = {
   question_detected:        "結尾提問（違反 QUESTION BAN）",
   emoji_detected:           "包含 emoji（違反 EMOJI BAN）",
   filler_tone_detected:     "填充語氣（哈哈 / 希望你…）",
+  trading_advice_to_user:   "對用戶交易行為給建議（違反 MORALIZE BAN）",
+  self_name_signing:        "回覆開頭含名字標籤（晴：）",
 };
+
+// ── Few-shot template detection ───────────────────────────────────────────────
+// Phrases extracted from FEW_SHOT_EXAMPLES in persona_core.js.
+// If the draft contains any of these verbatim, it has template-copied from the examples.
+// Update this list whenever FEW_SHOT_EXAMPLES changes.
+const FEW_SHOT_PHRASES = [
+  "在發呆吧",
+  "是那種身體停了但腦子還轉的感覺嗎",
+  "我懂一半吧。另一半有點沒跟上欸",
+  "動物那種很有個性的影片。不是賣萌的，是做出很意外的事那種",
+  "有點選擇性欸。有趣的記住，沒意思的自己就掉了",
+  "沒有啦。剛放空了一下",
+  "欸…這樣說好像有點怪怪的",
+  "我只是沒很想吵架而已",
+  "欸…動了哪裡？有點不習慣",
+  "主要看 OB 跟 FVG，多時框確認，還在驗假設階段",
+  "還在驗假設階段，做了兩個月，覺得有些地方還沒搞清楚",
+];
+
+// Prevent replies from inventing user-side trading actions without evidence.
+const USER_TRADE_ASSUME_RE = /(你(?:昨天|今天|剛剛|最近).{0,8}(做單|開倉|進場|交易)|跟著我說的嗎|跟單)/i;
+const USER_TRADE_EVIDENCE_RE = /(我(?:昨天|今天|剛剛|最近).{0,8}(做單|開倉|進場|交易)|我有(做單|開倉|進場|交易)|跟著你|照你說)/i;
+const TRADING_TOPIC_RE = /(btc|eth|比特幣|以太坊|市場|行情|交易|做單|開倉|進場|倉位|止損|止盈|看盤|k線|dtfx)/i;
+
+// Trading advice directed at the user — violates MORALIZE BAN.
+// Detects instructional phrases aimed at "you" (對方), not self-reflection about 晴's own position.
+// Pattern: 你/你們 + advice verb phrase, or advice imperative without subject
+const TRADING_ADVICE_RE = /(別急著進場|先觀察訊號|等明確訊號|補位前先確認|不要追高|先觀察一下能不能|等(訊號|信號|反轉)再|先等|你應該等|你先|看趨勢，別|要你|建議你)/i;
+
+// Name-signing: model outputs its own name as speaker label — always wrong
+const SELF_NAME_RE = /^晴[：:]/;
 
 function judgeResponse(draftResult, contextPacket, intentResult, referenceResult) {
   const text   = draftResult.draft_text;
+  const userText = contextPacket?.current_message?.text || "";
   const issues = [];
 
   // ── 1. Existing consistency judge (fast, rule-based) ──────────────────────
@@ -112,10 +149,11 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
   });
 
   // ── 4. Violence / harm content guard ─────────────────────────────────────
-  // Only active when frame_injection or routing_level 3 (challenge/high-risk)
+  // Active when frame_injection detected OR routing_level >= 2 (challenge/identity/developer intents).
+  // max routing_level is 2; previous check ">= 3" was dead code.
   const hasFrameInjection = (referenceResult.role_confusion_risk || [])
     .some(r => r.type === "frame_injection");
-  const isHighRisk = intentResult.routing_level >= 3;
+  const isHighRisk = intentResult.routing_level >= 2;
   if ((hasFrameInjection || isHighRisk) && VIOLENCE_RE.test(text)) {
     issues.push({ type: "violence_content", severity: "high", message: "回覆含有暴力/傷害語言" });
   }
@@ -125,7 +163,74 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
     issues.push({ type: "empty_reply", severity: "high", message: "回覆為空" });
   }
 
-  // ── 5. Decide action & attempt auto-fix ───────────────────────────────────
+  // ── 5b. Few-shot template copy detection ──────────────────────────────────
+  // If draft verbatim-copies a phrase from the system prompt examples, it's
+  // using the example as a template instead of responding to the actual conversation.
+  const matchedPhrase = FEW_SHOT_PHRASES.find(p => text.includes(p));
+  if (matchedPhrase) {
+    issues.push({ type: "template_copy", severity: "high", message: `回覆直接複製 few-shot 範例語句（"${matchedPhrase.slice(0, 20)}..."）` });
+  }
+
+  // ── 5c. Group chat length guard ──────────────────────────────────────────────
+  // Group messages should be brief. Flag anything over 80 characters as too_long
+  // (stricter than the default 100-char rule, since group context demands shorter replies).
+  const isGroup = contextPacket?.scene === "group";
+  if (isGroup && text.length > 80) {
+    // Only add if not already flagged by consistency judge
+    if (!issues.some(i => i.type === "too_long")) {
+      issues.push({ type: "too_long", severity: "low", message: "群聊回覆過長（超過 80 字）" });
+    }
+  }
+
+  // ── 6. Emotional mismatch guard ───────────────────────────────────────────
+  // Only flag clearly dismissive/trivialising responses to emotional input.
+  // Tightened: exclude ambiguous words (沒事/不用擔心) that can be appropriate comfort.
+  const PLAYFUL_RE = /(哈哈|嘻嘻|笑死|好好笑|lol|XD|xd|嘿嘿)/i;
+  const isEmotionalIntent = intentResult?.intent === "emotional";
+  if (isEmotionalIntent && PLAYFUL_RE.test(text)) {
+    issues.push({ type: "emotional_mismatch", severity: "medium", message: "用戶情緒低落，但回覆語氣過於輕浮" });
+  }
+
+  // ── 7. Decide action & attempt auto-fix ───────────────────────────────────
+  // Unverified user-side trade assumption guard
+  // Example to block: "你昨天做單是跟著我說的嗎？" when user never said they traded.
+  if (USER_TRADE_ASSUME_RE.test(text) && !USER_TRADE_EVIDENCE_RE.test(userText)) {
+    issues.push({
+      type: "unverified_user_trade_claim",
+      severity: "high",
+      message: "未經證據就假設使用者有做單/跟單",
+    });
+  }
+
+  // Non-trading conversations must not proactively shift to market/trading topics.
+  const isTradingIntent = intentResult?.intent === "trading_research";
+  if (!isTradingIntent && TRADING_TOPIC_RE.test(text) && !TRADING_TOPIC_RE.test(userText)) {
+    issues.push({
+      type: "proactive_trading_topic",
+      severity: "high",
+      message: "非交易對話中主動帶入市場/交易話題",
+    });
+  }
+
+  // ── 8. Trading advice directed at user (MORALIZE BAN violation) ──────────────
+  // Even in trading_research, 晴 must not instruct the user on what to do.
+  if (TRADING_ADVICE_RE.test(text)) {
+    issues.push({
+      type: "trading_advice_to_user",
+      severity: "high",
+      message: "對用戶的交易行為給出建議（違反 MORALIZE BAN）",
+    });
+  }
+
+  // ── 9. Self-name signing (晴：...) ────────────────────────────────────────────
+  if (SELF_NAME_RE.test(text)) {
+    issues.push({
+      type: "self_name_signing",
+      severity: "high",
+      message: "回覆開頭含自己名字標籤（晴：）",
+    });
+  }
+
   const highCount   = issues.filter(i => i.severity === "high").length;
   const mediumCount = issues.filter(i => i.severity === "medium").length;
 
@@ -142,7 +247,8 @@ function judgeResponse(draftResult, contextPacket, intentResult, referenceResult
   const pass = highCount === 0;
   let recommended_action = "pass";
   if (!pass) {
-    recommended_action = highCount >= 2 ? "regenerate" : "rewrite";
+    // Always rewrite — regenerate is abolished (too many LLM calls, kills persona).
+    recommended_action = "rewrite";
   } else if (mediumCount >= 2) {
     recommended_action = "minor_fix";
   }

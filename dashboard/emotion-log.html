@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>情緒日誌 — SocialAI</title>
   <link rel="stylesheet" href="style.css">
+  <script src="auth.js"></script>
   <style>
     .el-grid {
       display: grid;
@@ -160,9 +161,16 @@
       </div>
     </div>
     <nav class="topbar-nav">
-      <button class="btn" type="button" onclick="location.href='/'">← 返回控制台</button>
+      <button class="btn" type="button" onclick="location.href='/'">← 總覽</button>
       <div class="nav-sep"></div>
-      <button class="btn" type="button" onclick="fetchData()">刷新</button>
+      <button class="btn" type="button" onclick="location.href='/threads-moderation'">Threads 審核</button>
+      <button class="btn" type="button" onclick="location.href='/ai-cognition'">AI 認知</button>
+      <button class="btn" type="button" onclick="location.href='/lora-dashboard.html'">LoRA 訓練</button>
+      <button class="btn" type="button" onclick="location.href='/relationships'">關係記憶</button>
+      <button class="btn active" type="button">情緒日誌</button>
+      <button class="btn" type="button" onclick="location.href='/trading'">交易日誌</button>
+      <div class="nav-sep"></div>
+      <button id="refreshBtn" class="btn" type="button" onclick="manualRefreshEL()">刷新</button>
     </nav>
   </header>
 
@@ -242,6 +250,8 @@
   </main>
 
   <script>
+    // getToken / authFetch / showToast provided by auth.js
+
     const MOOD_COLORS = {
       PLAYFUL: '#4ade80', CURIOUS: '#60a5fa',
       CALM: '#67e8f9', TIRED: '#c084fc', WITHDRAWN: '#f87171',
@@ -329,7 +339,7 @@
 
     async function fetchData() {
       try {
-        const res = await fetch('/api/emotion-log');
+        const res = await authFetch('/api/emotion-log');
         const data = await res.json();
 
         renderMoodBadge(data.moodState?.mood);
@@ -342,7 +352,7 @@
         renderEvents(data.recentEvents);
         renderResidue(data.perUserResidue);
       } catch (e) {
-        console.error('emotion-log fetch failed', e);
+        document.getElementById('lastUpdated').textContent = '最後更新：載入失敗，請刷新';
       }
     }
 
@@ -353,7 +363,7 @@
       btn.textContent = '執行中...';
       result.style.display = 'none';
       try {
-        const res = await fetch('/api/memory/consolidate', { method: 'POST' });
+        const res = await authFetch('/api/memory/consolidate', { method: 'POST' });
         const data = await res.json();
         if (!data.results || data.results.length === 0) {
           result.innerHTML = '<div style="color:#6b7280;">無 episodic 記憶檔案。</div>';
@@ -378,8 +388,14 @@
       }
     }
 
+    function manualRefreshEL() {
+      const btn = document.getElementById('refreshBtn');
+      btn.textContent = '刷新中…'; btn.disabled = true;
+      fetchData().finally(() => { btn.textContent = '刷新'; btn.disabled = false; });
+    }
+
     fetchData();
-    setInterval(fetchData, 5000);
+    setInterval(fetchData, 15000);
   </script>
 </body>
 </html>
